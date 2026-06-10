@@ -1,4 +1,5 @@
 <?php
+require_once 'guard.php';
 include('dbconnect.php');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -21,8 +22,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'update') {
         $id = intval($_POST['PetID']);
         $isActive = intval($_POST['IsActive'] ?? 1);
-        $stmt = $conn->prepare("UPDATE pets SET ClientID=?,PetName=?,Species=?,Breed=?,Gender=?,DateOfBirth=?,Color=?,Weight=?,IsActive=? WHERE PetID=?");
-        $stmt->bind_param("issssssdii", $cid,$name,$species,$breed,$gender,$dob,$color,$weight,$isActive,$id);
+        $updateReason = trim($_POST['UpdateReason'] ?? '');
+        $stmt = $conn->prepare("UPDATE pets SET ClientID=?,PetName=?,Species=?,Breed=?,Gender=?,DateOfBirth=?,Color=?,Weight=?,IsActive=?,UpdateReason=? WHERE PetID=?");
+        $stmt->bind_param("issssssdisi", $cid,$name,$species,$breed,$gender,$dob,$color,$weight,$isActive,$updateReason,$id);
         $stmt->execute(); $stmt->close();
         header("Location: pets.php?msg=Pet updated successfully."); exit;
     }
@@ -92,10 +94,10 @@ function speciesIcon($s) {
             while ($row = $res->fetch_assoc()):
                 $age = $row['DateOfBirth'] ? floor((time() - strtotime($row['DateOfBirth'])) / 31536000) . 'y' : '—';
                 $isActive = $row['IsActive'];
-                $formattedPetId = 'PET-' . sprintf('%05d', $row['PetID']);
+                $formattedPetId = 'PET-' . sprintf('%04d', $row['PetID']);
             ?>
             <tr id="row-pet-<?= $row['PetID'] ?>" class="<?= ($highlightPetID && $highlightPetID==$row['PetID']) ? 'search-highlight-row' : '' ?>">
-                <td style="font-weight: 600; color: var(--muted); font-size: 13px;"><?= $formattedPetId ?></td>
+                <td><div style="font-weight:700; font-size:13px; color:var(--teal);"><?= $formattedPetId ?></div></td>
                 <td>
                     <div style="display:flex; align-items:center; gap:10px;">
                         <div style="width:38px; height:38px; background:#f0fdf4; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0;">
@@ -152,67 +154,80 @@ function speciesIcon($s) {
 <!-- VIEW PET MODAL -->
 <div class="modal fade" id="viewPetModal" tabindex="-1">
   <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-heart-fill me-2" style="color:#db2777;"></i>Pet Details</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body p-4">
-        <div class="row g-3 p-3 rounded mb-3" style="background:#f8fafc; border-left:4px solid #db2777;">
-          <div class="col-2" style="display:flex; align-items:center; justify-content:center;">
-            <div style="font-size:36px;" id="vPetIcon">🐾</div>
-          </div>
-          <div class="col-10">
-            <div style="font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase;">Pet Name</div>
-            <div style="font-weight:800; font-size:18px;" id="vPetName">—</div>
-            <div style="font-size:12px; color:var(--muted);" id="vPetSpecies">—</div>
-          </div>
-        </div>
-        <div class="row g-3">
-          <div class="col-6">
-            <div style="font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:4px;">Pet ID</div>
-            <div style="font-weight:700; color:var(--teal);" id="vPetID">—</div>
-          </div>
-          <div class="col-6">
-            <div style="font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:4px;">Status</div>
-            <div id="vPetStatus">—</div>
-          </div>
-          <div class="col-6">
-            <div style="font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:4px;">Owner</div>
-            <div id="vPetOwner" style="font-size:14px; font-weight:600;">—</div>
-          </div>
-          <div class="col-6">
-            <div style="font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:4px;">Gender</div>
-            <div id="vPetGender" style="font-size:14px;">—</div>
-          </div>
-          <div class="col-6">
-            <div style="font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:4px;">Breed</div>
-            <div id="vPetBreed" style="font-size:14px;">—</div>
-          </div>
-          <div class="col-6">
-            <div style="font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:4px;">Date of Birth</div>
-            <div id="vPetDOB" style="font-size:14px;">—</div>
-          </div>
-          <div class="col-6">
-            <div style="font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:4px;">Color / Markings</div>
-            <div id="vPetColor" style="font-size:14px;">—</div>
-          </div>
-          <div class="col-6">
-            <div style="font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:4px;">Weight</div>
-            <div id="vPetWeight" style="font-size:14px;">—</div>
-          </div>
-          <div class="col-6">
-            <div style="font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:4px;">Date Registered</div>
-            <div id="vPetRegistered" style="font-size:14px;">—</div>
-          </div>
+    <div class="modal-content" style="border-radius:14px;overflow:hidden;">
+
+      <!-- Custom header with print button -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 18px;background:#fff;border-bottom:1px solid var(--border);">
+        <span style="font-weight:700;font-size:14px;color:var(--dark);display:flex;align-items:center;gap:8px;">
+          <i class="bi bi-heart-fill" style="color:#db2777;"></i> Pet Details
+        </span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button type="button" onclick="printPetCard()" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:#f8fafc;color:var(--dark);cursor:pointer;">
+            <i class="bi bi-printer"></i> Print
+          </button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" style="font-size:11px;"></button>
         </div>
       </div>
+
+      <div class="modal-body p-0" id="petPrintArea">
+        <!-- Print-only header -->
+        <div class="pet-print-header" style="display:none;padding:18px 24px 14px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:4px;">
+          <img src="logo1.png" alt="Heartside Vet" style="width:48px;height:48px;object-fit:contain;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto;">
+          <div style="font-size:18px;font-weight:800;color:#1e3a5f;letter-spacing:.3px;">Heartside Vet Clinic</div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Patient Record</div>
+          <div style="font-size:13px;color:#334155;margin-top:6px;">Patient: <strong id="petPrintName"></strong> &nbsp;·&nbsp; Owner: <strong id="petPrintOwner"></strong></div>
+        </div>
+
+        <div style="padding:16px 20px;">
+          <!-- Pet name band -->
+          <div class="vm-header-band" style="border-left-color:#db2777;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:14px;">
+              <div style="font-size:38px;line-height:1;" id="vPetIcon">🐾</div>
+              <div>
+                <div class="vm-label">Pet Name</div>
+                <div class="vm-value-lg" id="vPetName">—</div>
+                <div class="vm-label mt-1" id="vPetSpecies" style="font-size:12px;text-transform:none;letter-spacing:0;">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-6"><div class="vm-label">Pet ID</div><div class="vm-value-id" id="vPetID">—</div></div>
+            <div class="col-6"><div class="vm-label">Status</div><div id="vPetStatus">—</div></div>
+            <div class="col-6"><div class="vm-label">Owner</div><div class="vm-value" style="font-weight:600;" id="vPetOwner">—</div></div>
+            <div class="col-6"><div class="vm-label">Gender</div><div class="vm-value" id="vPetGender">—</div></div>
+            <div class="col-6"><div class="vm-label">Breed</div><div class="vm-value" id="vPetBreed">—</div></div>
+            <div class="col-6"><div class="vm-label">Date of Birth</div><div class="vm-value" id="vPetDOB">—</div></div>
+            <div class="col-6"><div class="vm-label">Color / Markings</div><div class="vm-value" id="vPetColor">—</div></div>
+            <div class="col-6"><div class="vm-label">Weight</div><div class="vm-value" id="vPetWeight">—</div></div>
+            <div class="col-6"><div class="vm-label">Date Registered</div><div class="vm-value" id="vPetRegistered">—</div></div>
+            <div class="col-6" id="vPetUpdatedWrap" style="display:none;"><div class="vm-label"><i class="bi bi-clock-history me-1"></i>Last Updated</div><div class="vm-value" id="vPetUpdated" style="font-size:13px;">—</div></div>
+            <div class="col-6" id="vPetReasonWrap" style="display:none;"><div class="vm-label"><i class="bi bi-pencil-square me-1"></i>Reason for Update</div><div class="vm-notes-block" id="vPetReason" style="font-size:13px;">—</div></div>
+          </div>
+        </div>
+
+        <!-- Print-only footer -->
+        <div class="pet-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin:16px 20px 0;padding:10px 0;text-align:center;">
+          <div style="font-size:10px;color:#94a3b8;">Printed from Heartside Vet Clinic Management Portal &nbsp;·&nbsp; <span id="petPrintDate"></span></div>
+        </div>
+      </div>
+
       <div class="modal-footer">
         <button type="button" class="btn-main btn-outline" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
 </div>
+
+<style>
+@media print {
+  body * { visibility: hidden; }
+  #petPrintArea, #petPrintArea * { visibility: visible; }
+  #petPrintArea { position: fixed; top: 0; left: 0; width: 100%; padding: 32px; }
+  .pet-print-header, .pet-print-footer { display: block !important; }
+  .modal, .modal-dialog, .modal-content { box-shadow: none !important; border: none !important; }
+}
+</style>
 
 <!-- ADD / EDIT PET MODAL -->
 <div class="modal fade" id="petModal" tabindex="-1">
@@ -228,11 +243,11 @@ function speciesIcon($s) {
         <div class="modal-body">
             <div class="row g-3">
                 <div class="col-md-6">
-                    <label class="form-label">Pet Name</label>
+                    <label class="form-label">Pet Name <span style="color:#ef4444;">*</span></label>
                     <input type="text" name="PetName" id="fPetName" class="form-control" required>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label">Owner</label>
+                    <label class="form-label">Owner <span style="color:#ef4444;">*</span></label>
                     <select name="ClientID" id="fClientID" class="form-select" required>
                         <option value="">— Select Owner —</option>
                         <?php foreach ($clientsList as $c): ?>
@@ -275,6 +290,14 @@ function speciesIcon($s) {
                         <option value="0">Inactive</option>
                     </select>
                 </div>
+                <div class="col-md-8" id="petUpdateReasonField" style="display:none;">
+                    <label class="form-label"><i class="bi bi-pencil-square me-1" style="color:var(--teal);"></i>Reason for Updating <span style="color:#ef4444;">*</span></label>
+                    <input type="text" name="UpdateReason" id="fPetUpdateReason" class="form-control" placeholder="e.g. Weight updated, breed corrected…">
+                </div>
+                <div class="col-md-4" id="petUpdatedAtField" style="display:none;">
+                    <label class="form-label"><i class="bi bi-clock me-1" style="color:var(--muted);"></i>Date Updated</label>
+                    <input type="text" id="fPetUpdatedAt" class="form-control" readonly style="background:#f8fafc; color:var(--muted); font-size:13px;">
+                </div>
             </div>
         </div>
         <div class="modal-footer">
@@ -293,7 +316,7 @@ function viewPet(row) {
     document.getElementById('vPetIcon').textContent     = speciesIconMap[row.Species] || '🐾';
     document.getElementById('vPetName').textContent     = row.PetName || '—';
     document.getElementById('vPetSpecies').textContent  = row.Species || '—';
-    document.getElementById('vPetID').textContent       = 'PET-' + String(row.PetID).padStart(5, '0');
+    document.getElementById('vPetID').textContent       = 'PET-' + String(row.PetID).padStart(4, '0');
     document.getElementById('vPetOwner').textContent    = row.OwnerName || '—';
     document.getElementById('vPetGender').textContent   = row.Gender || '—';
     document.getElementById('vPetBreed').textContent    = row.Breed || '—';
@@ -306,7 +329,26 @@ function viewPet(row) {
     document.getElementById('vPetRegistered').textContent = row.CreatedAt
         ? new Date(row.CreatedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' })
         : '—';
-    new bootstrap.Modal(document.getElementById('viewPetModal')).show();
+    // Show update history
+    const updWrap    = document.getElementById('vPetUpdatedWrap');
+    const reasonWrap = document.getElementById('vPetReasonWrap');
+    if (row.UpdatedAt && row.UpdateReason) {
+        document.getElementById('vPetUpdated').textContent = new Date(row.UpdatedAt).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+        document.getElementById('vPetReason').textContent  = row.UpdateReason;
+        updWrap.style.display    = '';
+        reasonWrap.style.display = '';
+    } else {
+        updWrap.style.display    = 'none';
+        reasonWrap.style.display = 'none';
+    }
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('viewPetModal')).show();
+}
+
+function printPetCard() {
+    document.getElementById('petPrintName').textContent  = document.getElementById('vPetName').textContent;
+    document.getElementById('petPrintOwner').textContent = document.getElementById('vPetOwner').textContent;
+    document.getElementById('petPrintDate').textContent  = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+    window.print();
 }
 
 function openAdd() {
@@ -317,6 +359,9 @@ function openAdd() {
     document.getElementById('fGender').value = 'Unknown';
     document.getElementById('fClientID').value = '';
     document.getElementById('petStatusField').style.display = 'none';
+    document.getElementById('petUpdateReasonField').style.display = 'none';
+    document.getElementById('petUpdatedAtField').style.display    = 'none';
+    document.getElementById('fPetUpdateReason').required = false;
 }
 function openEdit(row) {
     document.getElementById('modalTitle').textContent = 'Edit Pet';
@@ -333,7 +378,12 @@ function openEdit(row) {
     document.getElementById('fWeight').value   = row.Weight ?? '';
     document.getElementById('fIsActive').value = row.IsActive;
     document.getElementById('petStatusField').style.display = 'block';
-    new bootstrap.Modal(document.getElementById('petModal')).show();
+    document.getElementById('petUpdateReasonField').style.display = 'block';
+    document.getElementById('petUpdatedAtField').style.display    = 'block';
+    document.getElementById('fPetUpdateReason').value   = '';
+    document.getElementById('fPetUpdateReason').required = true;
+    document.getElementById('fPetUpdatedAt').value = new Date().toLocaleDateString('en-US', { year:'numeric', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('petModal')).show();
 }
 </script>
 

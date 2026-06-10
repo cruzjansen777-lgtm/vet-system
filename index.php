@@ -1,4 +1,6 @@
-<?php include('dbconnect.php');
+<?php
+require_once('guard.php');
+include('dbconnect.php');
 include('header.php'); ?>
 
 <?php

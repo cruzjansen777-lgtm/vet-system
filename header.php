@@ -1,10 +1,17 @@
 <?php
-$userRole     = 'Admin';
-$userName     = 'Clinic Staff';
-$userInitials = 'CS';
+require_once 'guard.php';
 
-// Detect if we are rendering the welcome page to toggle layout structure
-$isWelcomePage = (basename($_SERVER['PHP_SELF']) == 'welcome.php');
+if (session_status() === PHP_SESSION_NONE) session_start();
+
+$userName     = isset($_SESSION['full_name'])  ? $_SESSION['full_name']  : 'Clinic Staff';
+$userRole     = isset($_SESSION['role'])       ? $_SESSION['role']       : 'Staff';
+$userInitials = '';
+if (!empty($_SESSION['first_name']) && !empty($_SESSION['last_name'])) {
+    $userInitials = strtoupper(substr($_SESSION['first_name'],0,1) . substr($_SESSION['last_name'],0,1));
+} else {
+    $userInitials = 'CS';
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -42,6 +49,22 @@ $isWelcomePage = (basename($_SERVER['PHP_SELF']) == 'welcome.php');
             --radius:    12px;
             --radius-sm: 8px;
             --radius-lg: 16px;
+
+            /* ── Module theme colors ── */
+            --clr-clients:       #3b82f6;
+            --clr-clients-bg:    #eff6ff;
+            --clr-pets:          #ec4899;
+            --clr-pets-bg:       #fdf2f8;
+            --clr-appointments:  #6366f1;
+            --clr-appointments-bg:#eef2ff;
+            --clr-consultations: #10b981;
+            --clr-consultations-bg:#f0fdf4;
+            --clr-billing:       #f97316;
+            --clr-billing-bg:    #fff7ed;
+            --clr-services:      #7c3aed;
+            --clr-services-bg:   #f5f3ff;
+            --clr-reports:       #ef4444;
+            --clr-reports-bg:    #fef2f2;
         }
 
         *, *::before, *::after { box-sizing: border-box; }
@@ -55,13 +78,6 @@ $isWelcomePage = (basename($_SERVER['PHP_SELF']) == 'welcome.php');
             overflow-x: hidden;
         }
 
-        /* Welcome Page View Alignment Context */
-        .welcome-layout-body {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 24px;
-        }
 
         /* ── Sidebar ── */
         #sidebar {
@@ -120,14 +136,7 @@ $isWelcomePage = (basename($_SERVER['PHP_SELF']) == 'welcome.php');
         }
         .sidebar-user-name { font-size: 12px; font-weight: 600; color: #0f172a; }
         .sidebar-user-role { font-size: 10px; color: #64748b; }
-        .sidebar-logout {
-            margin-left: auto; width: 26px; height: 26px;
-            background: rgba(255,255,255,.06); border: none; border-radius: 6px;
-            color: rgb(0, 0, 0); cursor: pointer;
-            display: flex; align-items: center; justify-content: center; font-size: 13px;
-            text-decoration: none; transition: all .15s;
-        }
-        .sidebar-logout:hover { background: rgba(238, 235, 235, 0.2); color: #ef4444; }
+
         .clinic-status {
             display: flex; align-items: center; gap: 8px;
             padding: 8px 10px; background: #f8fafc; border-radius: 8px;
@@ -372,6 +381,46 @@ $isWelcomePage = (basename($_SERVER['PHP_SELF']) == 'welcome.php');
             background: #f8fafc;
         }
 
+
+        /* ══ UNIVERSAL VIEW-MODAL & TABLE STANDARDIZATION ══ */
+        /* Field label (ALL view modals) */
+        .vm-label {
+            font-size: 11px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: .5px; color: var(--muted); margin-bottom: 4px;
+        }
+        /* Field value (ALL view modals) */
+        .vm-value {
+            font-size: 14px; color: var(--text); font-weight: 500;
+        }
+        .vm-value-lg {
+            font-size: 16px; font-weight: 700; color: var(--text);
+        }
+        .vm-value-id {
+            font-size: 15px; font-weight: 700; color: var(--teal);
+        }
+        .vm-value-money {
+            font-size: 14px; font-weight: 700; color: var(--green);
+        }
+        /* Header banner inside view modals */
+        .vm-header-band {
+            background: #f8fafc; border-left: 4px solid var(--teal);
+            border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;
+        }
+        /* Notes / pre-wrap block */
+        .vm-notes-block {
+            background: #f1f5f9; border-radius: 8px; padding: 12px 14px;
+            font-size: 13px; color: var(--text); white-space: pre-wrap;
+            min-height: 44px;
+        }
+        /* Table cell font normalisation (overrides scattered inline styles) */
+        .modern-table tbody tr td { font-size: 13.5px; }
+        .modern-table tbody tr td .cell-main  { font-weight: 700; font-size: 13.5px; color: var(--text); }
+        .modern-table tbody tr td .cell-sub   { font-size: 11px;  color: var(--muted); margin-top: 1px; }
+        .modern-table tbody tr td .cell-muted { font-size: 12px;  color: var(--muted); }
+        .modal-body .row .col-6 .vm-label,
+        .modal-body .row .col-12 .vm-label,
+        .modal-body .row .col-md-4 .vm-label,
+        .modal-body .row .col-md-6 .vm-label { margin-bottom: 4px; }
         /* ── Responsive ── */
         @media (max-width: 768px) {
             #sidebar { transform: translateX(-100%); }
@@ -382,15 +431,181 @@ $isWelcomePage = (basename($_SERVER['PHP_SELF']) == 'welcome.php');
             .page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
         }
     </style>
-</head>
-<body class="<?= $isWelcomePage ? 'welcome-layout-body' : '' ?>"> <!-- Dynamically inject styling hook if loading welcome page -->
+<script>
+// ── Global Search ──────────────────────────────────────────────
+let _sfActive = 'all', _searchTimer = null;
 
-<?php if (!$isWelcomePage): ?> <!-- Safely hide operational dashboard views if on welcome page -->
-<div id="sidebar-overlay" onclick="toggleSidebar()"></div>
+function setSF(f) {
+    _sfActive = f;
+    document.querySelectorAll('.sf-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById('sf-' + f);
+    if (btn) btn.classList.add('active');
+    const q = document.getElementById('globalSearch').value;
+    if (q.length >= 2) runSearch(q);
+}
+
+function showDrop() { document.getElementById('searchDropdown').classList.add('show'); }
+function hideDrop()  { document.getElementById('searchDropdown').classList.remove('show'); }
+
+function runSearch(q) {
+    clearTimeout(_searchTimer);
+    if (q.length < 1) { hideDrop(); return; }
+    _searchTimer = setTimeout(() => {
+        fetch('search_ajax.php?q=' + encodeURIComponent(q) + '&filter=' + _sfActive)
+            .then(r => r.json())
+            .then(data => renderResults(data, q))
+            .catch(() => {});
+    }, 220);
+}
+
+function renderResults(data, q) {
+    const box   = document.getElementById('searchResults');
+    const empty = document.getElementById('searchEmpty');
+    let html = '';
+
+    // ── Highlight matched query text inside a string ──
+    function hl(text, q) {
+        if (!text) return '';
+        const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return String(text).replace(new RegExp(`(${escaped})`, 'gi'),
+            `<mark style="background:#fef9c3;border-radius:2px;padding:0 1px;">$1</mark>`);
+    }
+
+    // ── ID: raw highlighted text (si-main carries bold+color) ──
+    function idTag(id, q) { return hl(id, q); }
+
+    // ── Status badge ──
+    function statusBadge(s) {
+        const map = {
+            'Pending':     'badge-pending',
+            'Partial':     'badge-partial',
+            'Paid':        'badge-paid',
+            'Scheduled':   'badge-scheduled',
+            'Completed':   'badge-completed',
+            'Cancelled':   'badge-cancelled',
+            'No-Show':     'badge-noshow',
+            'Active':      'badge-active',
+            'Checked Out': 'badge-inactive',
+        };
+        const cls = map[s] || 'badge-inactive';
+        return `<span class="badge-modern ${cls}" style="padding:2px 8px;font-size:10px;">${s}</span>`;
+    }
+
+    // ── CLIENTS ──
+    if (data.clients && data.clients.length) {
+        html += `<div class="search-section-label"><i class="bi bi-people-fill me-1"></i>Clients</div>`;
+        data.clients.forEach(r => {
+            html += `<a class="search-item" href="clients.php?highlight=${r.ClientID}">
+                <div class="si-icon" style="background:#eff6ff;color:#3b82f6;"><i class="bi bi-person-fill"></i></div>
+                <div>
+                    <div class="si-main" style="color:var(--teal);">${idTag(r.client_id, q)} <span style="font-size:11px;color:var(--muted);">· ${hl(r.name, q)}</span></div>
+                    <div class="si-sub">${hl(r.email ?? '', q)} ${r.phone ? '· ' + hl(r.phone, q) : ''}</div>
+                </div>
+            </a>`;
+        });
+    }
+
+    // ── PETS ──
+    if (data.pets && data.pets.length) {
+        html += `<div class="search-section-label"><i class="bi bi-heart-fill me-1"></i>Pets</div>`;
+        data.pets.forEach(r => {
+            html += `<a class="search-item" href="pets.php?highlight=${r.PetID}">
+                <div class="si-icon" style="background:#fdf2f8;color:#ec4899;"><i class="bi bi-heart-fill"></i></div>
+                <div>
+                    <div class="si-main" style="color:var(--teal);">${idTag(r.pet_id, q)} <span style="font-size:11px;color:var(--muted);">· ${hl(r.name, q)}</span></div>
+                    <div class="si-sub">${hl(r.species, q)} · Owner: ${hl(r.owner, q)}</div>
+                </div>
+            </a>`;
+        });
+    }
+
+    // ── APPOINTMENTS ──
+    if (data.appointments && data.appointments.length) {
+        html += `<div class="search-section-label"><i class="bi bi-calendar-check-fill me-1"></i>Appointments</div>`;
+        data.appointments.forEach(r => {
+            html += `<a class="search-item" href="appointments.php?highlight=${r.id}">
+                <div class="si-icon" style="background:#eef2ff;color:#6366f1;"><i class="bi bi-calendar-check-fill"></i></div>
+                <div>
+                    <div class="si-main" style="color:var(--teal);">${idTag(r.appt_id, q)} <span style="font-size:11px;color:var(--muted);">· ${hl(r.pet, q)} · ${hl(r.owner, q)}</span></div>
+                    <div class="si-sub">${r.date}${r.service ? ' · ' + hl(r.service, q) : ''} · ${statusBadge(r.status)}</div>
+                </div>
+            </a>`;
+        });
+    }
+
+    // ── MEDICAL ──
+    if (data.medical && data.medical.length) {
+        html += `<div class="search-section-label"><i class="bi bi-clipboard2-pulse-fill me-1"></i>Medical Records</div>`;
+        data.medical.forEach(r => {
+            html += `<a class="search-item" href="consultations.php?highlight=${r.id}">
+                <div class="si-icon" style="background:#f0fdf4;color:#10b981;"><i class="bi bi-clipboard2-pulse-fill"></i></div>
+                <div>
+                    <div class="si-main" style="color:var(--teal);">${idTag(r.con_id, q)} <span style="font-size:11px;color:var(--muted);">· ${hl(r.pet, q)}</span></div>
+                    <div class="si-sub">${r.date} · Dr. ${hl(r.doctor, q)}${r.diagnosis ? ' · ' + hl(r.diagnosis, q) : ''}</div>
+                </div>
+            </a>`;
+        });
+    }
+
+    // ── BILLING ──
+    if (data.billing && data.billing.length) {
+        html += `<div class="search-section-label"><i class="bi bi-receipt-cutoff me-1"></i>Billing</div>`;
+        data.billing.forEach(r => {
+            html += `<a class="search-item" href="billing.php?highlight=${r.BillingID}">
+                <div class="si-icon" style="background:#fff7ed;color:#f97316;"><i class="bi bi-receipt-cutoff"></i></div>
+                <div>
+                    <div class="si-main" style="color:var(--teal);">${idTag(r.invoice, q)} <span style="font-size:11px;color:var(--muted);">· ${hl(r.client, q)}</span></div>
+                    <div class="si-sub">${r.date} · ₱${parseFloat(r.TotalAmount).toLocaleString()} ${statusBadge(r.PaymentStatus)}</div>
+                </div>
+            </a>`;
+        });
+    }
+
+    // ── LODGING ──
+    if (data.lodging && data.lodging.length) {
+        html += `<div class="search-section-label"><i class="bi bi-house-heart-fill me-1"></i>Lodging</div>`;
+        data.lodging.forEach(r => {
+            html += `<a class="search-item" href="services.php?tab=lodging&highlight=${r.LodgingID}">
+                <div class="si-icon" style="background:#f5f3ff;color:#7c3aed;"><i class="bi bi-house-heart-fill"></i></div>
+                <div>
+                    <div class="si-main" style="color:var(--teal);">${idTag(r.ldg_id, q)} <span style="font-size:11px;color:var(--muted);">· ${hl(r.pet, q)} · ${hl(r.owner, q)}</span></div>
+                    <div class="si-sub">Cage ${hl(r.CageNumber, q)} · Check-in: ${r.checkin} · ${statusBadge(r.Status)}</div>
+                </div>
+            </a>`;
+        });
+    }
+
+    // ── SERVICES ──
+    if (data.services && data.services.length) {
+        html += `<div class="search-section-label"><i class="bi bi-box-seam-fill me-1"></i>Services</div>`;
+        data.services.forEach(r => {
+            html += `<a class="search-item" href="services.php?tab=services&highlight=${r.id}">
+                <div class="si-icon" style="background:#f5f3ff;color:#7c3aed;"><i class="bi bi-box-seam-fill"></i></div>
+                <div>
+                    <div class="si-main" style="color:var(--teal);">${idTag(r.svc_id, q)} <span style="font-size:11px;color:var(--muted);">· ${hl(r.name, q)}</span></div>
+                    <div class="si-sub">${hl(r.category, q)} · ₱${parseFloat(r.price).toLocaleString()}</div>
+                </div>
+            </a>`;
+        });
+    }
+
+    const hasResults = html.length > 0;
+    box.innerHTML = html;
+    empty.style.display = hasResults ? 'none' : 'block';
+    showDrop();
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+    if (!document.querySelector('.topbar-search').contains(e.target)) hideDrop();
+});
+</script>
+
+
 
 <!-- Sidebar -->
 <nav id="sidebar">
-    <a href="welcome.php" class="sidebar-brand"> <!-- Route back to welcome page upon clicking logo -->
+    <a href="index.php" class="sidebar-brand"> <!-- Route back to welcome page upon clicking logo -->
         <div class="brand-icon">
             <img src="logo1.png" alt="PawCare Logo" style="width: 38px; height: 38px; object-fit: contain;">
         </div>
@@ -407,26 +622,26 @@ $isWelcomePage = (basename($_SERVER['PHP_SELF']) == 'welcome.php');
         </a>
 
         <div class="nav-section-label">Modules</div>
-        <a href="clients.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='clients.php'?'active':'' ?>">
-            <i class="bi bi-people-fill"></i> Clients / Owners
+        <a href="clients.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='clients.php'?'active':'' ?>" style="<?= basename($_SERVER['PHP_SELF'])=='clients.php' ? 'color:#3b82f6;background:#3b82f618;' : '' ?>">
+            <i class="bi bi-people-fill" style="color:#3b82f6;"></i> Clients / Owners
         </a>
-        <a href="pets.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='pets.php'?'active':'' ?>">
-            <i class="bi bi-heart-fill"></i> Patients / Pets
+        <a href="pets.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='pets.php'?'active':'' ?>" style="<?= basename($_SERVER['PHP_SELF'])=='pets.php' ? 'color:#ec4899;background:#ec489918;' : '' ?>">
+            <i class="bi bi-heart-fill" style="color:#ec4899;"></i> Patients / Pets
         </a>
-        <a href="appointments.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='appointments.php'?'active':'' ?>">
-            <i class="bi bi-calendar-check-fill"></i> Appointments
+        <a href="appointments.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='appointments.php'?'active':'' ?>" style="<?= basename($_SERVER['PHP_SELF'])=='appointments.php' ? 'color:#6366f1;background:#6366f118;' : '' ?>">
+            <i class="bi bi-calendar-check-fill" style="color:#6366f1;"></i> Appointments
         </a>
-        <a href="consultations.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='consultations.php'?'active':'' ?>">
-            <i class="bi bi-clipboard2-pulse-fill"></i> Medical Records
+        <a href="consultations.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='consultations.php'?'active':'' ?>" style="<?= basename($_SERVER['PHP_SELF'])=='consultations.php' ? 'color:#10b981;background:#10b98118;' : '' ?>">
+            <i class="bi bi-clipboard2-pulse-fill" style="color:#10b981;"></i> Consultations & Medical Records
         </a>
-        <a href="billing.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='billing.php'?'active':'' ?>">
-            <i class="bi bi-receipt-cutoff"></i> Billing & Payments
+        <a href="billing.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='billing.php'?'active':'' ?>" style="<?= basename($_SERVER['PHP_SELF'])=='billing.php' ? 'color:#f97316;background:#f9731618;' : '' ?>">
+            <i class="bi bi-receipt-cutoff" style="color:#f97316;"></i> Billing & Payments
         </a>
-        <a href="services.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='services.php'?'active':'' ?>">
-            <i class="bi bi-box-seam-fill"></i> Services & Lodging
+        <a href="services.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='services.php'?'active':'' ?>" style="<?= basename($_SERVER['PHP_SELF'])=='services.php' ? 'color:#7c3aed;background:#7c3aed18;' : '' ?>">
+            <i class="bi bi-box-seam-fill" style="color:#7c3aed;"></i> Services & Lodging
         </a>
-        <a href="reports.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='reports.php'?'active':'' ?>">
-            <i class="bi bi-bar-chart-fill"></i> Reports & Analytics
+        <a href="reports.php" class="nav-item-link <?= basename($_SERVER['PHP_SELF'])=='reports.php'?'active':'' ?>" style="<?= basename($_SERVER['PHP_SELF'])=='reports.php' ? 'color:#ef4444;background:#ef444418;' : '' ?>">
+            <i class="bi bi-bar-chart-fill" style="color:#ef4444;"></i> Reports & Analytics
         </a>
     </div>
 
@@ -437,11 +652,19 @@ $isWelcomePage = (basename($_SERVER['PHP_SELF']) == 'welcome.php');
     </div>
     <div class="sidebar-user">
         <div class="sidebar-avatar"><?= $userInitials ?></div>
-        <div>
+        <div style="flex:1;min-width:0;">
             <div class="sidebar-user-name"><?= htmlspecialchars($userName) ?></div>
             <div class="sidebar-user-role"><?= htmlspecialchars($userRole) ?></div>
         </div>
-        <a href="logout.php" class="sidebar-logout" title="Logout" style="display:none;"><i class="bi bi-box-arrow-right"></i></a>
+        <a href="logout.php" title="Sign Out" style="
+            display:flex;align-items:center;justify-content:center;
+            width:28px;height:28px;border-radius:7px;flex-shrink:0;
+            color:#64748b;text-decoration:none;transition:all .15s;
+            background:rgba(0,0,0,.04);
+        " onmouseover="this.style.background='#fee2e2';this.style.color='#ef4444';"
+           onmouseout="this.style.background='rgba(0,0,0,.04)';this.style.color='#64748b';">
+            <i class="bi bi-box-arrow-right" style="font-size:14px;"></i>
+        </a>
     </div>
 </div>
 </nav>
@@ -451,19 +674,11 @@ $isWelcomePage = (basename($_SERVER['PHP_SELF']) == 'welcome.php');
     <button class="hamburger" onclick="toggleSidebar()">
         <span></span><span></span><span></span>
     </button>
-    <div>
-        <div class="topbar-title"><?php
-            $titles = ['index.php'=>'Dashboard','clients.php'=>'Clients / Owners','pets.php'=>'Patients / Pets','appointments.php'=>'Appointments','consultations.php'=>'Medical Records','billing.php'=>'Billing & Payments','services.php'=>'Services & Lodging','reports.php'=>'Analytics'];
-            echo $titles[basename($_SERVER['PHP_SELF'])] ?? 'PawCare Vet';
-        ?></div>
-        <div class="topbar-sub"><?= date('l, F d, Y') ?></div>
-    </div>
-
     <!-- SEARCH BAR -->
     <div class="topbar-search">
         <i class="bi bi-search"></i>
         <input type="text" id="globalSearch" placeholder="Search pets, owners, records..." autocomplete="off"
-               oninput="runSearch(this.value)" onfocus="if(this.value.length>1)showDrop()" onblur="setTimeout(hideDrop,200)">
+               oninput="runSearch(this.value)" onfocus="if(this.value.length>0)showDrop()" onblur="setTimeout(hideDrop,200)">
         <div id="searchDropdown">
             <div class="search-filter-bar">
                 <button class="sf-btn active" id="sf-all"          onclick="setSF('all')">All</button>
@@ -472,6 +687,7 @@ $isWelcomePage = (basename($_SERVER['PHP_SELF']) == 'welcome.php');
                 <button class="sf-btn"        id="sf-appointments" onclick="setSF('appointments')">Appointments</button>
                 <button class="sf-btn"        id="sf-medical"      onclick="setSF('medical')">Medical</button>
                 <button class="sf-btn"        id="sf-billing"      onclick="setSF('billing')">Billing</button>
+                <button class="sf-btn"        id="sf-lodging"      onclick="setSF('lodging')">Lodging</button>
                 <button class="sf-btn"        id="sf-services"     onclick="setSF('services')">Services</button>
             </div>
             <div id="searchResults"></div>
@@ -487,4 +703,4 @@ $isWelcomePage = (basename($_SERVER['PHP_SELF']) == 'welcome.php');
 
 <div id="main-wrapper">
 <div id="main-content">
-<?php endif; ?>
+<?php

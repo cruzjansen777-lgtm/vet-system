@@ -35,7 +35,7 @@ let searchTimer = null;
 
 function setSF(f) {
     sfActive = f;
-    ['all','clients','pets','appointments','medical','billing','services'].forEach(k => {
+    ['all','clients','pets','appointments','medical','billing','services','lodging'].forEach(k => {
         document.getElementById('sf-'+k).classList.toggle('active', k===f);
     });
     const q = document.getElementById('globalSearch').value;
@@ -61,7 +61,7 @@ async function doSearch(q) {
 function renderResults(data, q) {
     const el    = document.getElementById('searchResults');
     const empty = document.getElementById('searchEmpty');
-    const total = (data.clients||[]).length + (data.pets||[]).length + (data.appointments||[]).length + (data.medical||[]).length + (data.billing||[]).length + (data.services||[]).length;
+    const total = (data.clients||[]).length + (data.pets||[]).length + (data.appointments||[]).length + (data.medical||[]).length + (data.billing||[]).length + (data.services||[]).length + (data.lodging||[]).length;
 
     if (total === 0) { el.innerHTML=''; empty.style.display='block'; return; }
     empty.style.display = 'none';
@@ -72,7 +72,7 @@ function renderResults(data, q) {
         data.clients.forEach(c => {
             html += `<a class="search-item" href="clients.php?highlight=${c.ClientID}">
                 <div class="si-icon" style="background:#eff6ff;color:#2563eb;"><i class="bi bi-person-fill"></i></div>
-                <div><div class="si-main">${hl(c.name, q)}</div><div class="si-sub">${c.email||''} · ${c.phone||''}</div></div>
+                <div><div class="si-main"><span style="font-size:11px;font-weight:700;color:#2563eb;margin-right:6px;">${hl(c.client_id, q)}</span>${hl(c.name, q)}</div><div class="si-sub">${c.email||''} · ${c.phone||''}</div></div>
             </a>`;
         });
     }
@@ -81,7 +81,7 @@ function renderResults(data, q) {
         data.pets.forEach(p => {
             html += `<a class="search-item" href="pets.php?highlight=${p.PetID}">
                 <div class="si-icon" style="background:#fdf2f8;color:#db2777;"><i class="bi bi-heart-fill"></i></div>
-                <div><div class="si-main">${hl(p.name, q)}</div><div class="si-sub">${p.species||''} · Owner: ${p.owner||''}</div></div>
+                <div><div class="si-main"><span style="font-size:11px;font-weight:700;color:#db2777;margin-right:6px;">${hl(p.pet_id, q)}</span>${hl(p.name, q)}</div><div class="si-sub">${p.species||''} · Owner: ${p.owner||''}</div></div>
             </a>`;
         });
     }
@@ -91,7 +91,7 @@ function renderResults(data, q) {
         data.appointments.forEach(a => {
             html += `<a class="search-item" href="appointments.php?highlight=${a.id}">
                 <div class="si-icon" style="background:#eff6ff;color:#6366f1;"><i class="bi bi-calendar-check-fill"></i></div>
-                <div><div class="si-main">${hl(a.pet, q)} <span style="font-size:11px;color:var(--muted);">· ${a.owner||''}</span></div><div class="si-sub">${a.date} · ${hl(a.service||'—',q)} <span style="color:${apptStatusColor[a.status]||'#94a3b8'};font-weight:600;">${a.status}</span></div></div>
+                <div><div class="si-main"><span style="font-size:11px;font-weight:700;color:#6366f1;margin-right:6px;">${hl(a.appt_id, q)}</span>${hl(a.pet, q)} <span style="font-size:11px;color:var(--muted);">· ${a.owner||''}</span></div><div class="si-sub">${a.date} · ${hl(a.service||'—',q)} <span style="color:${apptStatusColor[a.status]||'#94a3b8'};font-weight:600;">${a.status}</span></div></div>
             </a>`;
         });
     }
@@ -100,7 +100,7 @@ function renderResults(data, q) {
         data.medical.forEach(m => {
             html += `<a class="search-item" href="consultations.php?highlight=${m.id}">
                 <div class="si-icon" style="background:#f0fdf4;color:#16a34a;"><i class="bi bi-clipboard2-pulse-fill"></i></div>
-                <div><div class="si-main">${hl(m.pet, q)} <span style="font-size:11px;color:var(--muted);">· Dr. ${hl(m.doctor||'', q)}</span></div><div class="si-sub">${m.date} · ${hl(m.diagnosis||'', q)}</div></div>
+                <div><div class="si-main"><span style="font-size:11px;font-weight:700;color:#16a34a;margin-right:6px;">${hl(m.con_id, q)}</span>${hl(m.pet, q)} <span style="font-size:11px;color:var(--muted);">· Dr. ${hl(m.doctor||'', q)}</span></div><div class="si-sub">${m.date} · ${hl(m.diagnosis||'', q)}</div></div>
             </a>`;
         });
     }
@@ -119,7 +119,18 @@ function renderResults(data, q) {
         data.services.forEach(s => {
             html += `<a class="search-item" href="services.php?highlight=${s.id}">
                 <div class="si-icon" style="background:#f5f3ff;color:#7c3aed;"><i class="bi bi-grid-fill"></i></div>
-                <div><div class="si-main">${hl(s.name, q)}</div><div class="si-sub">${s.category||''} · ₱${parseFloat(s.price).toLocaleString()}</div></div>
+                <div><div class="si-main"><span style="font-size:11px;font-weight:700;color:#7c3aed;margin-right:6px;">${hl(s.svc_id, q)}</span>${hl(s.name, q)}</div><div class="si-sub">${s.category||''} · ₱${parseFloat(s.price).toLocaleString()}</div></div>
+            </a>`;
+        });
+    }
+
+    if ((data.lodging||[]).length && ['all','lodging'].includes(sfActive)) {
+        html += `<div class="search-section-label">Lodging</div>`;
+        const ldgStatusColor = {Checked_In:'#2563eb', Checked_Out:'#16a34a', Reserved:'#d97706'};
+        data.lodging.forEach(l => {
+            html += `<a class="search-item" href="services.php?tab=lodging&highlight=${l.LodgingID}">
+                <div class="si-icon" style="background:#fff7ed;color:#ea580c;"><i class="bi bi-house-heart-fill"></i></div>
+                <div><div class="si-main"><span style="font-size:11px;font-weight:700;color:#ea580c;margin-right:6px;">${hl(l.ldg_id, q)}</span>${hl(l.pet, q)} <span style="font-size:11px;color:var(--muted);">· ${l.owner||''}</span></div><div class="si-sub">${l.checkin} · Cage ${l.CageNumber||'—'} <span style="color:${ldgStatusColor[l.Status]||'#94a3b8'};font-weight:600;">${l.Status}</span></div></div>
             </a>`;
         });
     }
@@ -139,13 +150,14 @@ function hl(text, q) {
     if (!hid) return;
 
     const page = location.pathname.split('/').pop();
+    const tab  = new URLSearchParams(location.search).get('tab') || '';
     const prefixMap = {
         'clients.php':       'row-cln-',
         'pets.php':          'row-pet-',
         'appointments.php':  'row-appt-',
         'consultations.php': 'row-con-',
         'billing.php':       'row-bill-',
-        'services.php':      'row-svc-',
+        'services.php':      tab === 'lodging' ? 'row-ldg-' : 'row-svc-',
     };
     const prefix = prefixMap[page];
     if (!prefix) return;
