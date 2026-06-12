@@ -47,6 +47,13 @@ function speciesIcon($s) {
     $icons = ['Dog'=>'🐕','Cat'=>'🐈','Bird'=>'🐦','Rabbit'=>'🐇','Snake'=>'🐍','Mouse'=>'🐁'];
     return $icons[$s] ?? '🐾';
 }
+
+// Date range filter (filters by Date Registered)
+$dateFrom = $_GET['date_from'] ?? '';
+$dateTo   = $_GET['date_to']   ?? '';
+$dateSql  = '';
+if ($dateFrom !== '') $dateSql .= " AND DATE(p.CreatedAt) >= '" . $conn->real_escape_string($dateFrom) . "'";
+if ($dateTo   !== '') $dateSql .= " AND DATE(p.CreatedAt) <= '" . $conn->real_escape_string($dateTo) . "'";
 ?>
 
 <div class="page-header">
@@ -55,6 +62,38 @@ function speciesIcon($s) {
         <p><?= $totalPets ?> active patients registered</p>
     </div>
     <div class="page-header-actions">
+        <form method="get" class="date-filter-form">
+            <input type="date" name="date_from" value="<?= htmlspecialchars($dateFrom) ?>" class="date-filter-input" title="Date registered from">
+            <span class="date-filter-sep">to</span>
+            <input type="date" name="date_to" value="<?= htmlspecialchars($dateTo) ?>" class="date-filter-input" title="Date registered to">
+            <button type="submit" class="btn-date-filter" title="Filter by date registered"><i class="bi bi-funnel-fill"></i></button>
+            <?php if ($dateFrom !== '' || $dateTo !== ''): ?>
+            <a href="pets.php" class="btn-date-clear" title="Clear date filter"><i class="bi bi-x-lg"></i></a>
+            <?php endif; ?>
+        </form>
+        <div class="export-dropdown-wrap">
+            <button class="btn-export" onclick="toggleExportMenu('exportMenuPets',this)">
+                <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+            </button>
+            <div class="export-menu" id="exportMenuPets">
+                <div class="export-menu-label">Export As</div>
+                <div class="export-menu-item" onclick="exportCSV('.modern-table','pets_list');document.getElementById('exportMenuPets').classList.remove('show');">
+                    <div class="ei-icon ei-csv"><i class="bi bi-filetype-csv"></i></div> CSV
+                </div>
+                <div class="export-menu-item" onclick="exportXLSX('.modern-table','pets_list',true);document.getElementById('exportMenuPets').classList.remove('show');">
+                    <div class="ei-icon ei-xls"><i class="bi bi-file-earmark-spreadsheet"></i></div> XLS
+                </div>
+                <div class="export-menu-item" onclick="exportXLSX('.modern-table','pets_list',false);document.getElementById('exportMenuPets').classList.remove('show');">
+                    <div class="ei-icon ei-xlsx"><i class="bi bi-file-earmark-spreadsheet-fill"></i></div> XLSX
+                </div>
+                <div class="export-menu-item" onclick="exportDOCX('.modern-table','pets_list','Pets / Patients List');document.getElementById('exportMenuPets').classList.remove('show');">
+                    <div class="ei-icon ei-docx"><i class="bi bi-file-earmark-word"></i></div> DOCX
+                </div>
+                <div class="export-menu-item" onclick="exportPDF('.modern-table');document.getElementById('exportMenuPets').classList.remove('show');">
+                    <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF
+                </div>
+            </div>
+        </div>
         <button class="btn-main btn-teal" data-bs-toggle="modal" data-bs-target="#petModal" onclick="openAdd()">
             <i class="bi bi-plus-lg"></i> Add Pet
         </button>
@@ -88,7 +127,7 @@ function speciesIcon($s) {
             </thead>
             <tbody>
             <?php
-            $res = $conn->query("SELECT p.*, CONCAT(c.FirstName,' ',c.LastName) AS OwnerName FROM pets p JOIN clients c ON p.ClientID=c.ClientID WHERE p.IsDeleted=0 ORDER BY p.CreatedAt DESC");
+            $res = $conn->query("SELECT p.*, CONCAT(c.FirstName,' ',c.LastName) AS OwnerName FROM pets p JOIN clients c ON p.ClientID=c.ClientID WHERE p.IsDeleted=0 $dateSql ORDER BY p.CreatedAt DESC");
             $highlightPetID = isset($_GET['highlight']) ? intval($_GET['highlight']) : 0;
             if ($res->num_rows == 0) echo '<tr class="empty-row"><td colspan="9"><i class="bi bi-heart" style="font-size:28px; display:block; margin-bottom:10px;"></i>No pets registered yet.</td></tr>';
             while ($row = $res->fetch_assoc()):
@@ -162,20 +201,28 @@ function speciesIcon($s) {
           <i class="bi bi-heart-fill" style="color:#db2777;"></i> Pet Details
         </span>
         <div style="display:flex;gap:8px;align-items:center;">
-          <button type="button" onclick="printPetCard()" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:#f8fafc;color:var(--dark);cursor:pointer;">
-            <i class="bi bi-printer"></i> Print
-          </button>
+          <div class="modal-export-wrap">
+            <button type="button" class="btn-modal-export" onclick="toggleExportMenu('petViewExportMenu',this)">
+                <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+            </button>
+            <div class="modal-export-menu" id="petViewExportMenu">
+                <div class="export-menu-label">Export As</div>
+                <div class="export-menu-item" onclick="window.print();document.getElementById('petViewExportMenu').classList.remove('show');">
+                    <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF / Print
+                </div>
+            </div>
+          </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal" style="font-size:11px;"></button>
         </div>
       </div>
 
       <div class="modal-body p-0" id="petPrintArea">
         <!-- Print-only header -->
-        <div class="pet-print-header" style="display:none;padding:18px 24px 14px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:4px;">
-          <img src="logo1.png" alt="Heartside Vet" style="width:48px;height:48px;object-fit:contain;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto;">
-          <div style="font-size:18px;font-weight:800;color:#1e3a5f;letter-spacing:.3px;">Heartside Vet Clinic</div>
-          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Patient Record</div>
-          <div style="font-size:13px;color:#334155;margin-top:6px;">Patient: <strong id="petPrintName"></strong> &nbsp;·&nbsp; Owner: <strong id="petPrintOwner"></strong></div>
+        <div class="pet-print-header" style="display:none;padding:22px 28px 16px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:8px;">
+          <img src="logo1.png" alt="Heartside Vet" style="width:56px;height:56px;object-fit:contain;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto;">
+          <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.4px;line-height:1.2;">Heartside Vet Clinic</div>
+          <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;font-weight:600;">Patient Record</div>
+          <div style="font-size:13px;color:#334155;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;">Patient: <strong id="petPrintName" style="color:#1e3a5f;"></strong> &nbsp;&nbsp;·&nbsp;&nbsp; Owner: <strong id="petPrintOwner" style="color:#1e3a5f;"></strong></div>
         </div>
 
         <div style="padding:16px 20px;">
@@ -207,8 +254,9 @@ function speciesIcon($s) {
         </div>
 
         <!-- Print-only footer -->
-        <div class="pet-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin:16px 20px 0;padding:10px 0;text-align:center;">
-          <div style="font-size:10px;color:#94a3b8;">Printed from Heartside Vet Clinic Management Portal &nbsp;·&nbsp; <span id="petPrintDate"></span></div>
+        <div class="pet-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin:20px 24px 0;padding:12px 0 4px;text-align:center;">
+          <div style="font-size:10px;color:#94a3b8;letter-spacing:.3px;">Heartside Vet Clinic Management System &nbsp;·&nbsp; <span id="petPrintDate"></span></div>
+          <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">This document is computer-generated and valid without a signature.</div>
         </div>
       </div>
 
@@ -221,11 +269,24 @@ function speciesIcon($s) {
 
 <style>
 @media print {
-  body * { visibility: hidden; }
-  #petPrintArea, #petPrintArea * { visibility: visible; }
-  #petPrintArea { position: fixed; top: 0; left: 0; width: 100%; padding: 32px; }
-  .pet-print-header, .pet-print-footer { display: block !important; }
-  .modal, .modal-dialog, .modal-content { box-shadow: none !important; border: none !important; }
+    /* ── Reset ── */
+    body * { visibility: hidden; }
+    body { margin: 0; padding: 0; background: #fff; font-size: 13px; font-family: 'Inter', system-ui, sans-serif; }
+
+    /* ── Patient Record print ── */
+    #petPrintArea, #petPrintArea * { visibility: visible; }
+    #petPrintArea {
+        position: fixed; top: 0; left: 0; width: 100%;
+        padding: 40px; background: #fff; box-sizing: border-box;
+    }
+    .pet-print-header, .pet-print-footer { display: block !important; }
+
+    /* ── Shared modal cleanup ── */
+    .modal, .modal-dialog, .modal-content {
+        box-shadow: none !important; border: none !important;
+    }
+    .vm-header-band { border: none !important; background: transparent !important; }
+    .badge-modern { border: 1px solid #ccc !important; }
 }
 </style>
 

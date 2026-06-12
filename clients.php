@@ -95,6 +95,13 @@ if (isset($_GET['get_pets'])) {
 ========================= */
 include('header.php');
 $totalClients = $conn->query("SELECT COUNT(*) FROM clients WHERE IsActive=1 AND IsDeleted=0")->fetch_row()[0];
+
+// Date range filter (filters by Date Registered)
+$dateFrom = $_GET['date_from'] ?? '';
+$dateTo   = $_GET['date_to']   ?? '';
+$dateSql  = '';
+if ($dateFrom !== '') $dateSql .= " AND DATE(CreatedAt) >= '" . $conn->real_escape_string($dateFrom) . "'";
+if ($dateTo   !== '') $dateSql .= " AND DATE(CreatedAt) <= '" . $conn->real_escape_string($dateTo) . "'";
 ?>
 
 <div class="page-header">
@@ -102,7 +109,40 @@ $totalClients = $conn->query("SELECT COUNT(*) FROM clients WHERE IsActive=1 AND 
         <h1>Clients / Owners</h1>
         <p><?= $totalClients ?> active clients registered</p>
     </div>
-    <div class="page-header-actions"><button class="btn-main btn-teal" data-bs-toggle="modal" data-bs-target="#clientModal" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Add Client</button></div>
+    <div class="page-header-actions">
+        <form method="get" class="date-filter-form">
+            <input type="date" name="date_from" value="<?= htmlspecialchars($dateFrom) ?>" class="date-filter-input" title="Date registered from">
+            <span class="date-filter-sep">to</span>
+            <input type="date" name="date_to" value="<?= htmlspecialchars($dateTo) ?>" class="date-filter-input" title="Date registered to">
+            <button type="submit" class="btn-date-filter" title="Filter by date registered"><i class="bi bi-funnel-fill"></i></button>
+            <?php if ($dateFrom !== '' || $dateTo !== ''): ?>
+            <a href="clients.php" class="btn-date-clear" title="Clear date filter"><i class="bi bi-x-lg"></i></a>
+            <?php endif; ?>
+        </form>
+        <div class="export-dropdown-wrap">
+            <button class="btn-export" onclick="toggleExportMenu('exportMenuClients',this)">
+                <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+            </button>
+            <div class="export-menu" id="exportMenuClients">
+                <div class="export-menu-label">Export As</div>
+                <div class="export-menu-item" onclick="exportCSV('.modern-table','clients_list');document.getElementById('exportMenuClients').classList.remove('show');">
+                    <div class="ei-icon ei-csv"><i class="bi bi-filetype-csv"></i></div> CSV
+                </div>
+                <div class="export-menu-item" onclick="exportXLSX('.modern-table','clients_list',true);document.getElementById('exportMenuClients').classList.remove('show');">
+                    <div class="ei-icon ei-xls"><i class="bi bi-file-earmark-spreadsheet"></i></div> XLS
+                </div>
+                <div class="export-menu-item" onclick="exportXLSX('.modern-table','clients_list',false);document.getElementById('exportMenuClients').classList.remove('show');">
+                    <div class="ei-icon ei-xlsx"><i class="bi bi-file-earmark-spreadsheet-fill"></i></div> XLSX
+                </div>
+                <div class="export-menu-item" onclick="exportDOCX('.modern-table','clients_list','Clients List');document.getElementById('exportMenuClients').classList.remove('show');">
+                    <div class="ei-icon ei-docx"><i class="bi bi-file-earmark-word"></i></div> DOCX
+                </div>
+                <div class="export-menu-item" onclick="exportPDF('.modern-table');document.getElementById('exportMenuClients').classList.remove('show');">
+                    <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF
+                </div>
+            </div>
+        </div>
+        <button class="btn-main btn-teal" data-bs-toggle="modal" data-bs-target="#clientModal" onclick="openAdd()"><i class="bi bi-plus-lg"></i> Add Client</button></div>
 </div>
 
 <?php if (isset($_GET['msg'])): ?><div class="alert-modern alert-success-modern"><i class="bi bi-check-circle-fill"></i> <?= htmlspecialchars($_GET['msg']) ?></div><?php endif; ?>
@@ -125,7 +165,7 @@ $totalClients = $conn->query("SELECT COUNT(*) FROM clients WHERE IsActive=1 AND 
             </thead>
             <tbody>
                 <?php
-                $res = $conn->query("SELECT * FROM clients WHERE IsDeleted = 0 ORDER BY ClientID DESC");
+                $res = $conn->query("SELECT * FROM clients WHERE IsDeleted = 0 $dateSql ORDER BY ClientID DESC");
                 $highlightID = isset($_GET['highlight']) ? intval($_GET['highlight']) : 0;
                 if ($res->num_rows == 0) {
                     echo "<tr><td colspan='8'>No clients found</td></tr>";
@@ -167,20 +207,28 @@ $totalClients = $conn->query("SELECT COUNT(*) FROM clients WHERE IsActive=1 AND 
                     <i class="bi bi-person-lines-fill" style="color:var(--teal);"></i> Client Details
                 </span>
                 <div style="display:flex;gap:8px;align-items:center;">
-                    <button type="button" onclick="printClientCard()" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:#f8fafc;color:var(--dark);cursor:pointer;">
-                        <i class="bi bi-printer"></i> Print
-                    </button>
+                    <div class="modal-export-wrap">
+                        <button type="button" class="btn-modal-export" onclick="toggleExportMenu('clientViewExportMenu',this)">
+                            <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+                        </button>
+                        <div class="modal-export-menu" id="clientViewExportMenu">
+                            <div class="export-menu-label">Export As</div>
+                            <div class="export-menu-item" onclick="window.print();document.getElementById('clientViewExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF / Print
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" style="font-size:11px;"></button>
                 </div>
             </div>
 
             <div class="modal-body p-0" id="clientPrintArea">
                 <!-- Print-only header (hidden on screen) -->
-                <div class="client-print-header" style="display:none;padding:18px 24px 14px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:4px;">
-                    <img src="logo1.png" alt="Heartside Vet" style="width:48px;height:48px;object-fit:contain;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto;">
-                    <div style="font-size:18px;font-weight:800;color:#1e3a5f;letter-spacing:.3px;">Heartside Vet Clinic</div>
-                    <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Client Record</div>
-                    <div style="font-size:13px;color:#334155;margin-top:6px;">Client: <strong id="clientPrintName"></strong> &nbsp;·&nbsp; ID: <strong id="clientPrintID"></strong></div>
+                <div class="client-print-header" style="display:none;padding:22px 28px 16px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:8px;">
+                    <img src="logo1.png" alt="Heartside Vet" style="width:56px;height:56px;object-fit:contain;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto;">
+                    <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.4px;line-height:1.2;">Heartside Vet Clinic</div>
+                    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;font-weight:600;">Client Record</div>
+                    <div style="font-size:13px;color:#334155;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;">Client: <strong id="clientPrintName" style="color:#1e3a5f;"></strong> &nbsp;&nbsp;·&nbsp;&nbsp; ID: <strong id="clientPrintID" style="color:#1e3a5f;"></strong></div>
                 </div>
 
                 <!-- Client info band -->
@@ -239,8 +287,9 @@ $totalClients = $conn->query("SELECT COUNT(*) FROM clients WHERE IsActive=1 AND 
                 </div>
 
                 <!-- Print footer -->
-                <div class="client-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin:16px 20px 0;padding:10px 0;text-align:center;">
-                    <div style="font-size:10px;color:#94a3b8;">Printed from Heartside Vet Clinic Management Portal &nbsp;·&nbsp; <span id="clientPrintDate"></span></div>
+                <div class="client-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin:20px 24px 0;padding:12px 0 4px;text-align:center;">
+                    <div style="font-size:10px;color:#94a3b8;letter-spacing:.3px;">Heartside Vet Clinic Management System &nbsp;·&nbsp; <span id="clientPrintDate"></span></div>
+                    <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">This document is computer-generated and valid without a signature.</div>
                 </div>
             </div>
 
@@ -253,11 +302,24 @@ $totalClients = $conn->query("SELECT COUNT(*) FROM clients WHERE IsActive=1 AND 
 
 <style>
 @media print {
+    /* ── Reset ── */
     body * { visibility: hidden; }
+    body { margin: 0; padding: 0; background: #fff; font-size: 13px; font-family: 'Inter', system-ui, sans-serif; }
+
+    /* ── Client Record print ── */
     #clientPrintArea, #clientPrintArea * { visibility: visible; }
-    #clientPrintArea { position: fixed; top: 0; left: 0; width: 100%; padding: 32px; }
+    #clientPrintArea {
+        position: fixed; top: 0; left: 0; width: 100%;
+        padding: 40px; background: #fff; box-sizing: border-box;
+    }
     .client-print-header, .client-print-footer { display: block !important; }
-    .modal, .modal-dialog, .modal-content { box-shadow: none !important; border: none !important; }
+
+    /* ── Shared modal cleanup ── */
+    .modal, .modal-dialog, .modal-content {
+        box-shadow: none !important; border: none !important;
+    }
+    .vm-header-band { border: none !important; background: transparent !important; }
+    .badge-modern { border: 1px solid #ccc !important; }
 }
 </style>
 

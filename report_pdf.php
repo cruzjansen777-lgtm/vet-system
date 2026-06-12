@@ -8,6 +8,7 @@ $type     = $_GET['type']  ?? 'analytics'; // clients | pets | appointments | co
 $dateFrom = $_GET['from']  ?? date('Y-m-01');
 $dateTo   = $_GET['to']    ?? date('Y-m-d');
 $range    = $_GET['range'] ?? '30';
+$backPage = $_GET['back']  ?? 'reports'; // reports | clients | pets | appointments | consultations | billing | services
 
 // ── Module metadata ──
 $moduleMap = [
@@ -359,6 +360,47 @@ if ($type === 'analytics') {
     .back-link { color: #94a3b8; text-decoration: none; font-size: 13px; }
     .back-link:hover { color: #fff; }
     body { padding-top: 52px; }
+
+    /* ── Export dropdown (screen only) ── */
+    .export-dropdown-wrap { position: relative; display: inline-flex; }
+    .btn-export {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600;
+      border: 1px solid #334155; background: #1e293b; color: #fff;
+      cursor: pointer; transition: all .15s; white-space: nowrap;
+    }
+    .btn-export:hover { background: #334155; }
+    .btn-export .chevron { font-size: 10px; margin-left: 2px; transition: transform .2s; }
+    .btn-export.open .chevron { transform: rotate(180deg); }
+    .export-menu {
+      display: none; position: absolute; top: calc(100% + 6px); right: 0;
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.08);
+      min-width: 180px; z-index: 9999; overflow: hidden; padding: 6px 0;
+    }
+    .export-menu.show { display: block; }
+    .export-menu-label {
+      font-size: 10px; font-weight: 700; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: 1px;
+      padding: 8px 14px 4px;
+    }
+    .export-menu-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px; font-size: 13px; font-weight: 500;
+      color: #1e293b; cursor: pointer; transition: background .1s;
+      text-decoration: none;
+    }
+    .export-menu-item:hover { background: #f1f5f9; }
+    .export-menu-item .ei-icon {
+      width: 28px; height: 28px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; flex-shrink: 0;
+    }
+    .ei-csv  { background: #f0fdf4; color: #16a34a; }
+    .ei-xls  { background: #f0fdf4; color: #15803d; }
+    .ei-xlsx { background: #f0fdf4; color: #166534; }
+    .ei-docx { background: #eff6ff; color: #2563eb; }
+    .ei-pdf  { background: #fef2f2; color: #dc2626; }
   }
   @media print {
     .print-bar { display: none !important; }
@@ -486,18 +528,44 @@ if ($type === 'analytics') {
 
 <!-- ── Print Bar (screen only) ── -->
 <div class="print-bar">
-  <a href="reports.php" class="back-link">← Back to Reports</a>
+  <a href="<?= htmlspecialchars($backPage) ?>.php" class="back-link">← Back to <?= ucfirst(htmlspecialchars($backPage)) ?></a>
   <span style="color:#94a3b8;">Heartside Vet · <?= htmlspecialchars($meta['label']) ?> Report</span>
-  <button class="print-btn" onclick="window.print()">⬇ Download / Print PDF</button>
+  <div class="export-dropdown-wrap">
+    <button class="btn-export" onclick="toggleExportMenu('pdfExportMenu', this)">
+      ⬇ Export <span class="chevron">▾</span>
+    </button>
+    <div class="export-menu" id="pdfExportMenu">
+      <div class="export-menu-label">Export As</div>
+      <?php $exQs = '&from=' . urlencode($dateFrom) . '&to=' . urlencode($dateTo); ?>
+      <a class="export-menu-item" href="reports.php?export=<?= $type ?>&format=csv<?= $exQs ?>">
+        <div class="ei-icon ei-csv">📄</div> CSV
+      </a>
+      <a class="export-menu-item" href="reports.php?export=<?= $type ?>&format=xls<?= $exQs ?>">
+        <div class="ei-icon ei-xls">📊</div> XLS
+      </a>
+      <a class="export-menu-item" href="reports.php?export=<?= $type ?>&format=xlsx<?= $exQs ?>">
+        <div class="ei-icon ei-xlsx">📊</div> XLSX
+      </a>
+      <a class="export-menu-item" href="reports.php?export=<?= $type ?>&format=docx<?= $exQs ?>">
+        <div class="ei-icon ei-docx">📝</div> DOCX
+      </a>
+      <a class="export-menu-item" href="javascript:void(0)" onclick="document.getElementById('pdfExportMenu').classList.remove('show');window.print();">
+        <div class="ei-icon ei-pdf">🖨️</div> PDF / Print
+      </a>
+    </div>
+  </div>
 </div>
 
 <div class="page">
 
   <!-- ── Report Header ── -->
   <div class="report-header">
-    <div>
-      <div class="report-title">Heartside Vet</div>
-      <div class="report-subtitle"><?= htmlspecialchars($meta['label']) ?> Report</div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <img src="logo1.png" alt="Heartside Vet" style="width:46px;height:46px;object-fit:contain;border-radius:8px;flex-shrink:0;">
+      <div>
+        <div class="report-title">Heartside Vet</div>
+        <div class="report-subtitle"><?= htmlspecialchars($meta['label']) ?> Report</div>
+      </div>
     </div>
     <div class="report-meta">
       <strong>Generated: <?= date('M d, Y g:i A') ?></strong><br>
@@ -998,5 +1066,18 @@ if ($type === 'analytics') {
   </div>
 
 </div><!-- .page -->
+<script>
+function toggleExportMenu(menuId, btnEl) {
+    const menu = document.getElementById(menuId);
+    const open = menu.classList.toggle('show');
+    btnEl.classList.toggle('open', open);
+}
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.export-dropdown-wrap')) {
+        document.querySelectorAll('.export-menu.show').forEach(m => m.classList.remove('show'));
+        document.querySelectorAll('.btn-export.open').forEach(b => b.classList.remove('open'));
+    }
+});
+</script>
 </body>
 </html>

@@ -11,6 +11,39 @@ if (isset($_GET['get_booked_slots'])) {
     exit(json_encode(array_map(fn($t) => substr($t['AppointmentTime'], 0, 5), $rows)));
 }
 
+// ── AJAX: live appointment search (for consultation dropdown) ──
+if (isset($_GET['search_appts'])) {
+    $q    = trim($_GET['q'] ?? '');
+    $safe = '%' . $conn->real_escape_string($q) . '%';
+    // Also handle APT-XXXX prefix
+    $numericID = null;
+    if (preg_match('/^APT-?0*(\d+)$/i', $q, $m)) $numericID = (int)$m[1];
+    elseif (ctype_digit($q)) $numericID = (int)$q;
+    $idCond = $numericID !== null ? "OR a.AppointmentID = $numericID" : "";
+
+    $rows = $conn->query("
+        SELECT a.AppointmentID, p.PetName, CONCAT(c.FirstName,' ',c.LastName) AS Owner,
+               a.AppointmentDate, s.ServiceName
+        FROM appointments a
+        JOIN pets p ON a.PetID=p.PetID
+        JOIN clients c ON a.ClientID=c.ClientID
+        LEFT JOIN services s ON a.ServiceID=s.ServiceID
+        WHERE a.Status='Scheduled' AND a.IsDeleted=0
+          AND NOT EXISTS (
+              SELECT 1 FROM consultations con
+              WHERE con.AppointmentID = a.AppointmentID AND con.IsDeleted=0
+          )
+          AND (p.PetName LIKE '$safe'
+               OR CONCAT(c.FirstName,' ',c.LastName) LIKE '$safe'
+               OR CONCAT('APT-',LPAD(a.AppointmentID,4,'0')) LIKE '$safe'
+               OR s.ServiceName LIKE '$safe'
+               $idCond)
+        ORDER BY a.AppointmentDate ASC LIMIT 10
+    ")->fetch_all(MYSQLI_ASSOC);
+    header('Content-Type: application/json');
+    exit(json_encode($rows));
+}
+
 // ── AJAX: appointment details (for auto-fill) ──
 if (isset($_GET['appt_detail'])) {
     $id  = intval($_GET['appt_detail']);
@@ -128,11 +161,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conn->query("UPDATE appointments SET Status='Completed' WHERE AppointmentID=$appt AND IsDeleted=0");
         }
 
-        // Auto-generate pending invoice
-        $today = date('Y-m-d');
-        $conn->query("INSERT INTO billing (ClientID,PetID,ConsultationID,BillingDate,TotalAmount,AmountPaid,PaymentMethod,PaymentStatus,Notes)
-                      VALUES ($cid,$pid,$conID,'$today',$grandTotal,0,'Cash','Pending','Auto-generated from Consultation #$conID')");
-
         // Schedule follow-up appointment if requested
         if ($fu && $fuTime) {
             $existing = $conn->query("SELECT AppointmentID FROM appointments WHERE PetID=$pid AND AppointmentDate='$fu' AND Status='Scheduled' AND IsDeleted=0")->num_rows;
@@ -144,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        header("Location: consultations.php?msg=Record saved and invoice generated.");
+        header("Location: consultations.php?msg=Record saved.");
         exit;
     }
 
@@ -229,6 +257,13 @@ $apptList = $conn->query("SELECT a.AppointmentID, p.PetName, CONCAT(c.FirstName,
 $servicesList = $conn->query("SELECT ServiceID,ServiceName,Category,Price FROM services WHERE IsActive=1 ORDER BY ServiceName")->fetch_all(MYSQLI_ASSOC);
 
 $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDeleted=0 AND VetName IS NOT NULL ORDER BY VetName")->fetch_all(MYSQLI_ASSOC);
+
+// Date range filter (filters by Consultation Date)
+$dateFrom = $_GET['date_from'] ?? '';
+$dateTo   = $_GET['date_to']   ?? '';
+$dateSql  = '';
+if ($dateFrom !== '') $dateSql .= " AND DATE(con.ConsultationDate) >= '" . $conn->real_escape_string($dateFrom) . "'";
+if ($dateTo   !== '') $dateSql .= " AND DATE(con.ConsultationDate) <= '" . $conn->real_escape_string($dateTo) . "'";
 ?>
 
 <div class="page-header">
@@ -237,6 +272,38 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
         <p>Manage checkups and historical medical records.</p>
     </div>
     <div class="page-header-actions">
+        <form method="get" class="date-filter-form">
+            <input type="date" name="date_from" value="<?= htmlspecialchars($dateFrom) ?>" class="date-filter-input" title="Consultation date from">
+            <span class="date-filter-sep">to</span>
+            <input type="date" name="date_to" value="<?= htmlspecialchars($dateTo) ?>" class="date-filter-input" title="Consultation date to">
+            <button type="submit" class="btn-date-filter" title="Filter by consultation date"><i class="bi bi-funnel-fill"></i></button>
+            <?php if ($dateFrom !== '' || $dateTo !== ''): ?>
+            <a href="consultations.php" class="btn-date-clear" title="Clear date filter"><i class="bi bi-x-lg"></i></a>
+            <?php endif; ?>
+        </form>
+        <div class="export-dropdown-wrap">
+            <button class="btn-export" onclick="toggleExportMenu('exportMenuConsults',this)">
+                <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+            </button>
+            <div class="export-menu" id="exportMenuConsults">
+                <div class="export-menu-label">Export As</div>
+                <div class="export-menu-item" onclick="exportCSV('.modern-table','consultations_list');document.getElementById('exportMenuConsults').classList.remove('show');">
+                    <div class="ei-icon ei-csv"><i class="bi bi-filetype-csv"></i></div> CSV
+                </div>
+                <div class="export-menu-item" onclick="exportXLSX('.modern-table','consultations_list',true);document.getElementById('exportMenuConsults').classList.remove('show');">
+                    <div class="ei-icon ei-xls"><i class="bi bi-file-earmark-spreadsheet"></i></div> XLS
+                </div>
+                <div class="export-menu-item" onclick="exportXLSX('.modern-table','consultations_list',false);document.getElementById('exportMenuConsults').classList.remove('show');">
+                    <div class="ei-icon ei-xlsx"><i class="bi bi-file-earmark-spreadsheet-fill"></i></div> XLSX
+                </div>
+                <div class="export-menu-item" onclick="exportDOCX('.modern-table','consultations_list','Medical Records');document.getElementById('exportMenuConsults').classList.remove('show');">
+                    <div class="ei-icon ei-docx"><i class="bi bi-file-earmark-word"></i></div> DOCX
+                </div>
+                <div class="export-menu-item" onclick="exportPDF('.modern-table');document.getElementById('exportMenuConsults').classList.remove('show');">
+                    <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF
+                </div>
+            </div>
+        </div>
         <button class="btn-main btn-teal" data-bs-toggle="modal" data-bs-target="#consultModal" onclick="openAdd()">
             <i class="bi bi-plus-lg"></i> New Record
         </button>
@@ -258,6 +325,7 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
                     <th>Attending Vet</th>
                     <th>Diagnosis</th>
                     <th>Total</th>
+                    <th>Billing</th>
                     <th>Follow-Up</th>
                     <th>Actions</th>
                 </tr>
@@ -265,8 +333,15 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
             <tbody>
                 <?php
                 $highlightID = isset($_GET['highlight']) ? intval($_GET['highlight']) : 0;
-                $res = $conn->query("SELECT con.*, p.PetName FROM consultations con JOIN pets p ON con.PetID=p.PetID WHERE con.IsDeleted=0 ORDER BY con.ConsultationDate DESC, con.ConsultationID DESC");
-                if ($res->num_rows == 0) echo '<tr><td colspan="8" class="text-center p-4 text-muted">No records on file.</td></tr>';
+                $res = $conn->query("SELECT con.*, p.PetName,
+                                            b.BillingID, b.PaymentStatus AS BillingPaymentStatus,
+                                            CONCAT('INV-',LPAD(b.BillingID,4,'0')) AS InvoiceNo
+                                     FROM consultations con
+                                     JOIN pets p ON con.PetID=p.PetID
+                                     LEFT JOIN billing b ON b.ConsultationID=con.ConsultationID AND b.IsDeleted=0
+                                     WHERE con.IsDeleted=0 $dateSql
+                                     ORDER BY con.ConsultationDate DESC, con.ConsultationID DESC");
+                if ($res->num_rows == 0) echo '<tr><td colspan="9" class="text-center p-4 text-muted">No records on file.</td></tr>';
                 while ($row = $res->fetch_assoc()):
                     $ownerName = $clientsList[$row['ClientID']] ?? '—';
                     $apptTime  = '—';
@@ -300,6 +375,22 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
                         <td><?= htmlspecialchars($row['VetName']) ?></td>
                         <td><div style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?= htmlspecialchars($row['Diagnosis'] ?: '—') ?></div></td>
                         <td style="font-weight:700;color:var(--green);"><?= $conTotal > 0 ? '₱' . number_format($conTotal, 2) : '—' ?></td>
+                        <td><?php
+                            $bStatus = $row['BillingPaymentStatus'] ?? null;
+                            $invNo   = $row['InvoiceNo'] ?? null;
+                            if ($bStatus === 'Paid') {
+                                echo '<span class="badge-modern badge-paid"><i class="bi bi-check-circle-fill me-1"></i>Paid</span>';
+                                if ($invNo) echo '<div style="font-size:10px;color:var(--muted);margin-top:2px;">' . htmlspecialchars($invNo) . '</div>';
+                            } elseif ($bStatus === 'Partial') {
+                                echo '<span class="badge-modern badge-partial"><i class="bi bi-clock-history me-1"></i>Partial</span>';
+                                if ($invNo) echo '<div style="font-size:10px;color:var(--muted);margin-top:2px;">' . htmlspecialchars($invNo) . '</div>';
+                            } elseif ($bStatus === 'Pending') {
+                                echo '<span class="badge-modern badge-pending"><i class="bi bi-hourglass-split me-1"></i>Pending</span>';
+                                if ($invNo) echo '<div style="font-size:10px;color:var(--muted);margin-top:2px;">' . htmlspecialchars($invNo) . '</div>';
+                            } else {
+                                echo '<span style="font-size:11px;color:var(--muted);">No invoice</span>';
+                            }
+                        ?></td>
                         <td><?php
                             if ($row['FollowUpDate']) {
                                 $fuMap = ['Scheduled'=>['badge-scheduled','bi-bell-fill'],'Completed'=>['badge-completed','bi-check-circle-fill'],'Cancelled'=>['badge-cancelled','bi-x-circle-fill'],'No-Show'=>['badge-noshow','bi-dash-circle-fill'],'Pending'=>['badge-pending','bi-clock-fill']];
@@ -342,14 +433,23 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
                             <i class="bi bi-link-45deg me-1" style="color:var(--teal);"></i>
                             Linked Appointment — <em style="font-weight:400;text-transform:none;">auto-fills patient, services &amp; date</em>
                         </label>
-                        <select id="fLinkedAppt" class="form-select" onchange="onApptLink(this)">
-                            <option value="">— select appointment —</option>
-                            <?php foreach ($apptList as $a): ?>
-                                <option value="<?= $a['AppointmentID'] ?>">
-                                    APT-<?= str_pad($a['AppointmentID'], 4, '0', STR_PAD_LEFT) ?> · <?= date('Y-m-d', strtotime($a['AppointmentDate'])) ?> · <?= htmlspecialchars($a['PetName']) ?> / <?= htmlspecialchars($a['Owner']) ?><?= $a['ServiceName'] ? ' (' . $a['ServiceName'] . ')' : '' ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
+                        <div style="position:relative;">
+                            <div style="position:relative;">
+                                <i class="bi bi-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none;"></i>
+                                <input type="text" id="fLinkedApptSearch" class="form-control" placeholder="Search by APT-####, pet name, owner or service…" autocomplete="off"
+                                    style="padding-left:34px;padding-right:36px;"
+                                    oninput="apptSearchInput(this.value)" onfocus="apptSearchInput(this.value)" onblur="setTimeout(hideApptDrop,200)">
+                                <button type="button" id="fLinkedApptClearBtn" onclick="clearApptLink()" title="Clear"
+                                    style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:0;line-height:1;">
+                                    <i class="bi bi-x-circle-fill"></i>
+                                </button>
+                            </div>
+                            <div id="apptSearchDrop" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:1060;max-height:240px;overflow-y:auto;">
+                                <div id="apptSearchResults"></div>
+                                <div id="apptSearchEmpty" style="display:none;padding:12px 14px;font-size:13px;color:var(--muted);text-align:center;"><i class="bi bi-calendar-x me-1"></i> No unlinked appointments found</div>
+                                <div id="apptSearchLoading" style="display:none;padding:12px 14px;font-size:13px;color:var(--muted);text-align:center;"><span class="spinner-border spinner-border-sm me-2" style="color:var(--teal);"></span>Searching…</div>
+                            </div>
+                        </div>
                         <input type="hidden" name="AppointmentID" id="fApptIDHidden">
                     </div>
 
@@ -477,7 +577,7 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
 
                 <div class="modal-footer" style="flex-shrink:0;">
                     <button type="button" class="btn-main btn-outline" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn-main btn-teal" id="submitBtn"><i class="bi bi-receipt me-1"></i> Save &amp; generate invoice</button>
+                    <button type="submit" class="btn-main btn-teal" id="submitBtn"><i class="bi bi-check-lg me-1"></i> Save Record</button>
                 </div>
             </form>
         </div>
@@ -493,19 +593,27 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
                     <i class="bi bi-file-earmark-medical" style="color:var(--teal);"></i> Medical Case File
                 </span>
                 <div style="display:flex;gap:8px;align-items:center;">
-                    <button type="button" onclick="printConsultCard()" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:#f8fafc;color:var(--dark);cursor:pointer;">
-                        <i class="bi bi-printer"></i> Print
-                    </button>
+                    <div class="modal-export-wrap">
+                        <button type="button" class="btn-modal-export" onclick="toggleExportMenu('consultViewExportMenu',this)">
+                            <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+                        </button>
+                        <div class="modal-export-menu" id="consultViewExportMenu">
+                            <div class="export-menu-label">Export As</div>
+                            <div class="export-menu-item" onclick="window.print();document.getElementById('consultViewExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF / Print
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" style="font-size:11px;"></button>
                 </div>
             </div>
 
             <div class="modal-body" id="consultPrintArea">
-                <div class="consult-print-header" style="display:none;padding:18px 24px 14px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:16px;">
-                    <img src="logo1.png" alt="Heartside Vet" style="width:48px;height:48px;object-fit:contain;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto;">
-                    <div style="font-size:18px;font-weight:800;color:#1e3a5f;letter-spacing:.3px;">Heartside Vet Clinic</div>
-                    <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Medical Case File</div>
-                    <div style="font-size:13px;color:#334155;margin-top:6px;">Consult: <strong id="consultPrintNum"></strong> &nbsp;·&nbsp; Patient: <strong id="consultPrintPet"></strong></div>
+                <div class="consult-print-header" style="display:none;padding:22px 28px 16px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:16px;">
+                    <img src="logo1.png" alt="Heartside Vet" style="width:56px;height:56px;object-fit:contain;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto;">
+                    <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.4px;line-height:1.2;">Heartside Vet Clinic</div>
+                    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;font-weight:600;">Medical Case File</div>
+                    <div style="font-size:13px;color:#334155;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;">Consult: <strong id="consultPrintNum" style="color:#1e3a5f;"></strong> &nbsp;&nbsp;·&nbsp;&nbsp; Patient: <strong id="consultPrintPet" style="color:#1e3a5f;"></strong></div>
                 </div>
 
                 <div class="vm-header-band row g-3 mb-3">
@@ -553,8 +661,9 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
                     </div>
                 </div>
 
-                <div class="consult-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin-top:20px;padding-top:10px;text-align:center;">
-                    <div style="font-size:10px;color:#94a3b8;">Printed from Heartside Vet Clinic Management Portal &nbsp;·&nbsp; <span id="consultPrintDate"></span></div>
+                <div class="consult-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin:20px 0 0;padding:12px 0 4px;text-align:center;">
+                    <div style="font-size:10px;color:#94a3b8;letter-spacing:.3px;">Heartside Vet Clinic Management System &nbsp;·&nbsp; <span id="consultPrintDate"></span></div>
+                    <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">This document is computer-generated and valid without a signature.</div>
                 </div>
             </div>
             <div class="modal-footer"><button type="button" class="btn-main btn-outline" data-bs-dismiss="modal">Close</button></div>
@@ -564,18 +673,32 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
 
 <style>
 @media print {
+    /* ── Reset ── */
     body * { visibility: hidden; }
-    /* Case File Print Layout */
+    body { margin: 0; padding: 0; background: #fff; font-size: 13px; font-family: 'Inter', system-ui, sans-serif; }
+
+    /* ── Medical Case File print ── */
     #consultPrintArea, #consultPrintArea * { visibility: visible; }
-    #consultPrintArea { position: fixed; top: 0; left: 0; width: 100%; padding: 32px; }
+    #consultPrintArea {
+        position: fixed; top: 0; left: 0; width: 100%;
+        padding: 40px; background: #fff; box-sizing: border-box;
+    }
     .consult-print-header, .consult-print-footer { display: block !important; }
 
-    /* Medical History Log Print Layout */
+    /* ── Patient History Log print ── */
     #historyPrintArea, #historyPrintArea * { visibility: visible; }
-    #historyPrintArea { position: fixed; top: 0; left: 0; width: 100%; padding: 32px; }
+    #historyPrintArea {
+        position: fixed; top: 0; left: 0; width: 100%;
+        padding: 40px; background: #fff; box-sizing: border-box;
+    }
     .history-print-header, .history-print-footer { display: block !important; }
 
-    .modal, .modal-dialog, .modal-content { box-shadow: none !important; border: none !important; }
+    /* ── Shared modal cleanup ── */
+    .modal, .modal-dialog, .modal-content {
+        box-shadow: none !important; border: none !important;
+    }
+    .vm-header-band { border: none !important; background: transparent !important; }
+    .badge-modern { border: 1px solid #ccc !important; }
 }
 </style>
 
@@ -650,8 +773,55 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
             document.getElementById('svcEmpty').style.display = '';
     }
 
-    async function onApptLink(sel) {
-        const id = sel.value;
+    let apptSearchTimer = null;
+    function apptSearchInput(val) {
+        clearTimeout(apptSearchTimer);
+        showApptDrop();
+        document.getElementById('apptSearchLoading').style.display = '';
+        document.getElementById('apptSearchEmpty').style.display = 'none';
+        apptSearchTimer = setTimeout(() => doApptSearch(val), 220);
+    }
+    async function doApptSearch(q) {
+        const res  = await fetch(`consultations.php?search_appts=1&q=${encodeURIComponent(q)}`);
+        const rows = await res.json();
+        document.getElementById('apptSearchLoading').style.display = 'none';
+        const el = document.getElementById('apptSearchResults');
+        if (!rows.length) { el.innerHTML=''; document.getElementById('apptSearchEmpty').style.display=''; return; }
+        document.getElementById('apptSearchEmpty').style.display = 'none';
+        el.innerHTML = rows.map(a => {
+            const aptID  = 'APT-' + String(a.AppointmentID).padStart(4,'0');
+            const date   = a.AppointmentDate ? a.AppointmentDate.substring(0,10) : '';
+            const svc    = a.ServiceName ? ` · ${a.ServiceName}` : '';
+            return `<div class="appt-search-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:13px;display:flex;align-items:center;gap:10px;"
+                        onmousedown="selectApptItem(${a.AppointmentID}, '${aptID}')">
+                        <div style="min-width:72px;font-weight:700;color:var(--teal);font-size:12px;">${aptID}</div>
+                        <div>
+                            <div style="font-weight:600;color:var(--dark);">${a.PetName} <span style="font-weight:400;color:var(--muted);">· ${a.Owner}</span></div>
+                            <div style="font-size:11px;color:var(--muted);">${date}${svc}</div>
+                        </div>
+                    </div>`;
+        }).join('');
+    }
+    function showApptDrop() { document.getElementById('apptSearchDrop').style.display=''; }
+    function hideApptDrop() { document.getElementById('apptSearchDrop').style.display='none'; }
+    function selectApptItem(id, label) {
+        document.getElementById('fLinkedApptSearch').value = label;
+        document.getElementById('fLinkedApptClearBtn').style.display = '';
+        document.getElementById('apptSearchResults').innerHTML = '';
+        hideApptDrop();
+        onApptLink(id);
+    }
+    // Hover highlight for search items
+    document.addEventListener('mouseover', e => {
+        const item = e.target.closest('.appt-search-item');
+        if (item) item.style.background = '#f0fdf4';
+    });
+    document.addEventListener('mouseout', e => {
+        const item = e.target.closest('.appt-search-item');
+        if (item) item.style.background = '';
+    });
+
+    async function onApptLink(id) {
         document.getElementById('fApptIDHidden').value = id;
         if (!id) { clearApptLink(); return; }
 
@@ -663,7 +833,7 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
         document.getElementById('fClientID').value   = data.ClientID;
         document.getElementById('fDate').value        = data.AppointmentDate;
         document.getElementById('fOwnerDisplay').value = data.OwnerName;
-        document.getElementById('autoFillMsg').textContent = `Auto-filled from Appointment #${id} · ${data.PetName} / ${data.OwnerName} · ${data.AppointmentDate}`;
+        document.getElementById('autoFillMsg').textContent = `Auto-filled from APT-${String(id).padStart(4,'0')} · ${data.PetName} / ${data.OwnerName} · ${data.AppointmentDate}`;
         document.getElementById('autoFillBanner').classList.remove('d-none');
         document.getElementById('linkedBadge').style.display = '';
 
@@ -675,7 +845,8 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
     }
 
     function clearApptLink() {
-        document.getElementById('fLinkedAppt').value   = '';
+        document.getElementById('fLinkedApptSearch').value = '';
+        document.getElementById('fLinkedApptClearBtn').style.display = 'none';
         document.getElementById('fApptIDHidden').value = '';
         document.getElementById('autoFillBanner').classList.add('d-none');
         document.getElementById('linkedBadge').style.display = 'none';
@@ -782,9 +953,11 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
     function openAdd() {
         document.getElementById('modalTitle').textContent = 'Consultation record';
         document.getElementById('formAction').value = 'add';
-        document.getElementById('submitBtn').innerHTML = '<i class="bi bi-receipt me-1"></i> Save &amp; generate invoice';
+        document.getElementById('submitBtn').innerHTML = '<i class="bi bi-check-lg me-1"></i> Save Record';
         document.getElementById('modalWarningBanner').classList.add('d-none');
         document.getElementById('linkedBadge').style.display = 'none';
+        document.getElementById('fLinkedApptSearch').value = '';
+        document.getElementById('fLinkedApptClearBtn').style.display = 'none';
         clearApptLink();
         currentFuApptID = 0;
         document.getElementById('fEnableFollowUp').checked = false;
@@ -829,21 +1002,18 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
         document.getElementById('fPresc').value      = row.Prescription   || '';
 
         document.getElementById('fApptIDHidden').value = row.AppointmentID || '';
-        const linkedSel = document.getElementById('fLinkedAppt');
+        const apptSearchInp = document.getElementById('fLinkedApptSearch');
+        const clearBtn = document.getElementById('fLinkedApptClearBtn');
         if (row.AppointmentID) {
-            linkedSel.value = row.AppointmentID;
-            if (linkedSel.value != row.AppointmentID) {
-                const ghost = document.createElement('option');
-                ghost.value = row.AppointmentID;
-                ghost.textContent = 'APT-' + String(row.AppointmentID).padStart(4, '0') + ' (linked)';
-                linkedSel.appendChild(ghost);
-                linkedSel.value = row.AppointmentID;
-            }
+            const aptLabel = 'APT-' + String(row.AppointmentID).padStart(4, '0') + ' (linked)';
+            apptSearchInp.value = aptLabel;
+            clearBtn.style.display = '';
             document.getElementById('linkedBadge').style.display = '';
-            document.getElementById('autoFillMsg').textContent = 'Linked to Appointment #' + row.AppointmentID;
+            document.getElementById('autoFillMsg').textContent = 'Linked to APT-' + String(row.AppointmentID).padStart(4, '0');
             document.getElementById('autoFillBanner').classList.remove('d-none');
         } else {
-            linkedSel.value = '';
+            apptSearchInp.value = '';
+            clearBtn.style.display = 'none';
             document.getElementById('autoFillBanner').classList.add('d-none');
         }
 
@@ -1042,18 +1212,38 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
                     </div>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;">
-                    <button type="button" onclick="printHistoryCard()" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid #bae6fd;background:#fff;color:var(--dark);cursor:pointer;">
-                        <i class="bi bi-printer"></i> Print
-                    </button>
+                    <div class="modal-export-wrap">
+                        <button type="button" class="btn-modal-export" onclick="toggleExportMenu('consultHistExportMenu',this)">
+                            <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+                        </button>
+                        <div class="modal-export-menu" id="consultHistExportMenu">
+                            <div class="export-menu-label">Export As</div>
+                            <div class="export-menu-item" onclick="exportCSV('#historyPrintArea table','patient_history');document.getElementById('consultHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-csv"><i class="bi bi-filetype-csv"></i></div> CSV
+                            </div>
+                            <div class="export-menu-item" onclick="exportXLSX('#historyPrintArea table','patient_history',true);document.getElementById('consultHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-xls"><i class="bi bi-file-earmark-spreadsheet"></i></div> XLS
+                            </div>
+                            <div class="export-menu-item" onclick="exportXLSX('#historyPrintArea table','patient_history',false);document.getElementById('consultHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-xlsx"><i class="bi bi-file-earmark-spreadsheet-fill"></i></div> XLSX
+                            </div>
+                            <div class="export-menu-item" onclick="exportDOCX('#historyPrintArea table','patient_history','Patient Medical History');document.getElementById('consultHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-docx"><i class="bi bi-file-earmark-word"></i></div> DOCX
+                            </div>
+                            <div class="export-menu-item" onclick="window.print();document.getElementById('consultHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF / Print
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" style="margin:0;"></button>
                 </div>
             </div>
             <div class="modal-body p-0" id="historyPrintArea">
-                <div class="history-print-header" style="display:none;padding:18px 24px 14px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:16px;">
-                    <img src="logo1.png" alt="Heartside Vet" style="width:48px;height:48px;object-fit:contain;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto;">
-                    <div style="font-size:18px;font-weight:800;color:#1e3a5f;letter-spacing:.3px;">Heartside Vet Clinic</div>
-                    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Complete Patient History Log</div>
-                    <div style="font-size:13px;color:#334155;margin-top:6px;">Patient: <strong id="phPrintPetName"></strong></div>
+                <div class="history-print-header" style="display:none;padding:22px 28px 16px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:16px;">
+                    <img src="logo1.png" alt="Heartside Vet" style="width:56px;height:56px;object-fit:contain;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto;">
+                    <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.4px;line-height:1.2;">Heartside Vet Clinic</div>
+                    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;font-weight:600;">Complete Patient History Log</div>
+                    <div style="font-size:13px;color:#334155;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;">Patient: <strong id="phPrintPetName" style="color:#1e3a5f;"></strong></div>
                 </div>
 
                 <div id="phLoading" class="text-center p-5 text-muted">
@@ -1081,8 +1271,9 @@ $vetsList = $conn->query("SELECT DISTINCT VetName FROM consultations WHERE IsDel
                     </table>
                 </div>
 
-                <div class="history-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin-top:20px;padding-top:10px;text-align:center;">
-                    <div style="font-size:10px;color:#94a3b8;">Printed from Heartside Vet Clinic Management Portal &nbsp;·&nbsp; <span id="historyPrintDate"></span></div>
+                <div class="history-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin-top:20px;padding:12px 18px 4px;text-align:center;">
+                    <div style="font-size:10px;color:#94a3b8;letter-spacing:.3px;">Heartside Vet Clinic Management System &nbsp;·&nbsp; <span id="historyPrintDate"></span></div>
+                    <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">This document is computer-generated and valid without a signature.</div>
                 </div>
             </div>
             <div class="modal-footer" style="background:#f8fafc;border-top:1px solid var(--border);">

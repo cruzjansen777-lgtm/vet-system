@@ -120,6 +120,15 @@ $activeTab     = $_GET['tab'] ?? 'services';
 $totalSvcs     = $conn->query("SELECT COUNT(*) FROM services WHERE IsActive=1 AND IsDeleted=0")->fetch_row()[0];
 $activeLodging = $conn->query("SELECT COUNT(*) FROM lodging WHERE Status='Active'")->fetch_row()[0];
 
+// Date range filter: Services tab filters by Date Registered (CreatedAt),
+// Lodging tab filters by Check-In Date
+$dateFrom = $_GET['date_from'] ?? '';
+$dateTo   = $_GET['date_to']   ?? '';
+$dateCol  = ($activeTab === 'lodging') ? 'l.CheckInDate' : 'CreatedAt';
+$dateSql  = '';
+if ($dateFrom !== '') $dateSql .= " AND DATE($dateCol) >= '" . $conn->real_escape_string($dateFrom) . "'";
+if ($dateTo   !== '') $dateSql .= " AND DATE($dateCol) <= '" . $conn->real_escape_string($dateTo) . "'";
+
 $catColors = [
     'Consultation' => '#eff6ff:#2563eb',
     'Grooming'     => '#fdf2f8:#db2777',
@@ -145,6 +154,39 @@ function vfield($label, $id, $extraClass = '', $col = 6) {
         <p><?= $totalSvcs ?> active services · <?= $activeLodging ?> pets boarding</p>
     </div>
     <div class="page-header-actions">
+        <form method="get" class="date-filter-form">
+            <input type="hidden" name="tab" value="<?= htmlspecialchars($activeTab) ?>">
+            <input type="date" name="date_from" value="<?= htmlspecialchars($dateFrom) ?>" class="date-filter-input" title="<?= $activeTab === 'lodging' ? 'Check-in date from' : 'Date registered from' ?>">
+            <span class="date-filter-sep">to</span>
+            <input type="date" name="date_to" value="<?= htmlspecialchars($dateTo) ?>" class="date-filter-input" title="<?= $activeTab === 'lodging' ? 'Check-in date to' : 'Date registered to' ?>">
+            <button type="submit" class="btn-date-filter" title="Filter by date"><i class="bi bi-funnel-fill"></i></button>
+            <?php if ($dateFrom !== '' || $dateTo !== ''): ?>
+            <a href="services.php?tab=<?= htmlspecialchars($activeTab) ?>" class="btn-date-clear" title="Clear date filter"><i class="bi bi-x-lg"></i></a>
+            <?php endif; ?>
+        </form>
+        <div class="export-dropdown-wrap">
+            <button class="btn-export" onclick="toggleExportMenu('exportMenuServices',this)">
+                <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+            </button>
+            <div class="export-menu" id="exportMenuServices">
+                <div class="export-menu-label">Export As</div>
+                <div class="export-menu-item" onclick="exportCSV('.modern-table','services_list');document.getElementById('exportMenuServices').classList.remove('show');">
+                    <div class="ei-icon ei-csv"><i class="bi bi-filetype-csv"></i></div> CSV
+                </div>
+                <div class="export-menu-item" onclick="exportXLSX('.modern-table','services_list',true);document.getElementById('exportMenuServices').classList.remove('show');">
+                    <div class="ei-icon ei-xls"><i class="bi bi-file-earmark-spreadsheet"></i></div> XLS
+                </div>
+                <div class="export-menu-item" onclick="exportXLSX('.modern-table','services_list',false);document.getElementById('exportMenuServices').classList.remove('show');">
+                    <div class="ei-icon ei-xlsx"><i class="bi bi-file-earmark-spreadsheet-fill"></i></div> XLSX
+                </div>
+                <div class="export-menu-item" onclick="exportDOCX('.modern-table','services_list','Services / Lodging List');document.getElementById('exportMenuServices').classList.remove('show');">
+                    <div class="ei-icon ei-docx"><i class="bi bi-file-earmark-word"></i></div> DOCX
+                </div>
+                <div class="export-menu-item" onclick="exportPDF('.modern-table');document.getElementById('exportMenuServices').classList.remove('show');">
+                    <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF
+                </div>
+            </div>
+        </div>
         <?php if ($activeTab === 'services'): ?>
         <button class="btn-main btn-teal" data-bs-toggle="modal" data-bs-target="#svcModal" onclick="openAddSvc()"><i class="bi bi-plus-lg"></i> Add Service</button>
         <?php else: ?>
@@ -161,8 +203,8 @@ function vfield($label, $id, $extraClass = '', $col = 6) {
 <?php endif; ?>
 
 <div class="nav-tabs-modern">
-    <a class="nav-tab <?= $activeTab === 'services' ? 'active' : '' ?>" href="?tab=services"><i class="bi bi-box-seam-fill me-1"></i> Clinic Services</a>
-    <a class="nav-tab <?= $activeTab === 'lodging'  ? 'active' : '' ?>" href="?tab=lodging"><i class="bi bi-house-heart-fill me-1"></i> Lodging & Boarding</a>
+    <a class="nav-tab <?= $activeTab === 'services' ? 'active' : '' ?>" href="?tab=services<?= $dateFrom !== '' ? '&date_from='.urlencode($dateFrom) : '' ?><?= $dateTo !== '' ? '&date_to='.urlencode($dateTo) : '' ?>"><i class="bi bi-box-seam-fill me-1"></i> Clinic Services</a>
+    <a class="nav-tab <?= $activeTab === 'lodging'  ? 'active' : '' ?>" href="?tab=lodging<?= $dateFrom !== '' ? '&date_from='.urlencode($dateFrom) : '' ?><?= $dateTo !== '' ? '&date_to='.urlencode($dateTo) : '' ?>"><i class="bi bi-house-heart-fill me-1"></i> Lodging & Boarding</a>
 </div>
 
 <?php if ($activeTab === 'services'): ?>
@@ -176,7 +218,7 @@ function vfield($label, $id, $extraClass = '', $col = 6) {
             <thead><tr><th>Service #</th><th>Service Name</th><th>Category</th><th>Price</th><th>Duration</th><th>Description</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
             <?php
-            $res = $conn->query("SELECT * FROM services WHERE IsDeleted=0 ORDER BY Category, ServiceName");
+            $res = $conn->query("SELECT * FROM services WHERE IsDeleted=0 $dateSql ORDER BY Category, ServiceName");
             $highlightSvcID = isset($_GET['highlight']) ? intval($_GET['highlight']) : 0;
             if (!$res->num_rows) echo '<tr class="empty-row"><td colspan="8"><i class="bi bi-box-seam" style="font-size:28px;display:block;margin-bottom:10px;"></i>No services found. Add your first service!</td></tr>';
             while ($row = $res->fetch_assoc()):
@@ -216,7 +258,7 @@ function vfield($label, $id, $extraClass = '', $col = 6) {
             <thead><tr><th>Lodging #</th><th>Pet</th><th>Owner</th><th>Check-In</th><th>Check-Out</th><th>Cage</th><th>Daily Rate</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
             <?php
-            $res = $conn->query("SELECT l.*, p.PetName, CONCAT(c.FirstName,' ',c.LastName) AS Owner FROM lodging l JOIN pets p ON l.PetID=p.PetID JOIN clients c ON l.ClientID=c.ClientID WHERE l.IsDeleted=0 ORDER BY l.CheckInDate DESC");
+            $res = $conn->query("SELECT l.*, p.PetName, CONCAT(c.FirstName,' ',c.LastName) AS Owner FROM lodging l JOIN pets p ON l.PetID=p.PetID JOIN clients c ON l.ClientID=c.ClientID WHERE l.IsDeleted=0 $dateSql ORDER BY l.CheckInDate DESC");
             if (!$res->num_rows) echo '<tr class="empty-row"><td colspan="9"><i class="bi bi-house-heart" style="font-size:28px;display:block;margin-bottom:10px;"></i>No lodging records found.</td></tr>';
             while ($row = $res->fetch_assoc()):
                 $json       = htmlspecialchars(json_encode($row));
@@ -394,20 +436,28 @@ function vfield($label, $id, $extraClass = '', $col = 6) {
             <i class="bi bi-box-seam-fill" style="color:var(--teal);"></i> Service Details
         </span>
         <div style="display:flex;gap:8px;align-items:center;">
-            <button type="button" onclick="printSvcCard()" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:#f8fafc;color:var(--dark);cursor:pointer;">
-                <i class="bi bi-printer"></i> Print
-            </button>
+            <div class="modal-export-wrap">
+                <button type="button" class="btn-modal-export" onclick="toggleExportMenu('svcViewExportMenu',this)">
+                    <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+                </button>
+                <div class="modal-export-menu" id="svcViewExportMenu">
+                    <div class="export-menu-label">Export As</div>
+                    <div class="export-menu-item" onclick="window.print();document.getElementById('svcViewExportMenu').classList.remove('show');">
+                        <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF / Print
+                    </div>
+                </div>
+            </div>
             <button type="button" class="btn-close" data-bs-dismiss="modal" style="font-size:11px;"></button>
         </div>
     </div>
 
     <div class="modal-body p-0" id="svcPrintArea">
         <!-- Print-only header -->
-        <div class="svc-print-header" style="display:none;padding:18px 24px 14px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:4px;">
-            <img src="logo1.png" alt="Heartside Vet" style="width:48px;height:48px;object-fit:contain;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto;">
-            <div style="font-size:18px;font-weight:800;color:#1e3a5f;letter-spacing:.3px;">Heartside Vet Clinic</div>
-            <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Service Record</div>
-            <div style="font-size:13px;color:#334155;margin-top:6px;">Service: <strong id="svcPrintName"></strong> &nbsp;·&nbsp; Category: <strong id="svcPrintCategory"></strong></div>
+        <div class="svc-print-header" style="display:none;padding:22px 28px 16px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:8px;">
+            <img src="logo1.png" alt="Heartside Vet" style="width:56px;height:56px;object-fit:contain;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto;">
+            <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.4px;line-height:1.2;">Heartside Vet Clinic</div>
+            <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;font-weight:600;">Service Record</div>
+            <div style="font-size:13px;color:#334155;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;">Service: <strong id="svcPrintName" style="color:#1e3a5f;"></strong> &nbsp;&nbsp;·&nbsp;&nbsp; Category: <strong id="svcPrintCategory" style="color:#1e3a5f;"></strong></div>
         </div>
 
         <div style="padding:16px 20px;">
@@ -422,8 +472,9 @@ function vfield($label, $id, $extraClass = '', $col = 6) {
         </div>
 
         <!-- Print-only footer -->
-        <div class="svc-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin:16px 20px 0;padding:10px 0;text-align:center;">
-            <div style="font-size:10px;color:#94a3b8;">Printed from Heartside Vet Clinic Management Portal &nbsp;·&nbsp; <span id="svcPrintDate"></span></div>
+        <div class="svc-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin:20px 24px 0;padding:12px 0 4px;text-align:center;">
+            <div style="font-size:10px;color:#94a3b8;letter-spacing:.3px;">Heartside Vet Clinic Management System &nbsp;·&nbsp; <span id="svcPrintDate"></span></div>
+            <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">This document is computer-generated and valid without a signature.</div>
         </div>
     </div>
 
@@ -432,17 +483,40 @@ function vfield($label, $id, $extraClass = '', $col = 6) {
 
 <style>
 @media print {
-  body * { visibility: hidden; }
-  #svcPrintArea, #svcPrintArea * { visibility: visible; }
-  #svcPrintArea { position: fixed; top: 0; left: 0; width: 100%; padding: 32px; }
-  .svc-print-header, .svc-print-footer { display: block !important; }
-  #lodgePrintArea, #lodgePrintArea * { visibility: visible; }
-  #lodgePrintArea { position: fixed; top: 0; left: 0; width: 100%; padding: 32px; }
-  .lodge-print-header, .lodge-print-footer { display: block !important; }
-  #plhPrintArea, #plhPrintArea * { visibility: visible; }
-  #plhPrintArea { position: fixed; top: 0; left: 0; width: 100%; padding: 32px; }
-  .plh-print-header, .plh-print-footer { display: block !important; }
-  .modal, .modal-dialog, .modal-content { box-shadow: none !important; border: none !important; }
+    /* ── Reset ── */
+    body * { visibility: hidden; }
+    body { margin: 0; padding: 0; background: #fff; font-size: 13px; font-family: 'Inter', system-ui, sans-serif; }
+
+    /* ── Service Record print ── */
+    #svcPrintArea, #svcPrintArea * { visibility: visible; }
+    #svcPrintArea {
+        position: fixed; top: 0; left: 0; width: 100%;
+        padding: 40px; background: #fff; box-sizing: border-box;
+    }
+    .svc-print-header, .svc-print-footer { display: block !important; }
+
+    /* ── Lodging Record print ── */
+    #lodgePrintArea, #lodgePrintArea * { visibility: visible; }
+    #lodgePrintArea {
+        position: fixed; top: 0; left: 0; width: 100%;
+        padding: 40px; background: #fff; box-sizing: border-box;
+    }
+    .lodge-print-header, .lodge-print-footer { display: block !important; }
+
+    /* ── Pet Lodging History print ── */
+    #plhPrintArea, #plhPrintArea * { visibility: visible; }
+    #plhPrintArea {
+        position: fixed; top: 0; left: 0; width: 100%;
+        padding: 40px; background: #fff; box-sizing: border-box;
+    }
+    .plh-print-header, .plh-print-footer { display: block !important; }
+
+    /* ── Shared modal cleanup ── */
+    .modal, .modal-dialog, .modal-content {
+        box-shadow: none !important; border: none !important;
+    }
+    .vm-header-band { border: none !important; background: transparent !important; }
+    .badge-modern { border: 1px solid #ccc !important; }
 }
 </style>
 
@@ -461,19 +535,39 @@ function vfield($label, $id, $extraClass = '', $col = 6) {
                     </div>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:12px;">
-                    <button type="button" onclick="printPetLodgingHistory()" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:#fff;color:var(--dark);cursor:pointer;">
-                        <i class="bi bi-printer"></i> Print
-                    </button>
+                    <div class="modal-export-wrap">
+                        <button type="button" class="btn-modal-export" onclick="toggleExportMenu('ldgHistExportMenu',this)">
+                            <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+                        </button>
+                        <div class="modal-export-menu" id="ldgHistExportMenu">
+                            <div class="export-menu-label">Export As</div>
+                            <div class="export-menu-item" onclick="exportCSV('#plhPrintArea table','lodging_history');document.getElementById('ldgHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-csv"><i class="bi bi-filetype-csv"></i></div> CSV
+                            </div>
+                            <div class="export-menu-item" onclick="exportXLSX('#plhPrintArea table','lodging_history',true);document.getElementById('ldgHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-xls"><i class="bi bi-file-earmark-spreadsheet"></i></div> XLS
+                            </div>
+                            <div class="export-menu-item" onclick="exportXLSX('#plhPrintArea table','lodging_history',false);document.getElementById('ldgHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-xlsx"><i class="bi bi-file-earmark-spreadsheet-fill"></i></div> XLSX
+                            </div>
+                            <div class="export-menu-item" onclick="exportDOCX('#plhPrintArea table','lodging_history','Pet Lodging History');document.getElementById('ldgHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-docx"><i class="bi bi-file-earmark-word"></i></div> DOCX
+                            </div>
+                            <div class="export-menu-item" onclick="window.print();document.getElementById('ldgHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF / Print
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
             </div>
             <div class="modal-body p-0" id="plhPrintArea">
                 <!-- Print-only header -->
-                <div class="plh-print-header" style="display:none;padding:18px 24px 14px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:16px;">
-                    <img src="logo1.png" alt="Heartside Vet" style="width:48px;height:48px;object-fit:contain;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto;">
-                    <div style="font-size:18px;font-weight:800;color:#1e3a5f;letter-spacing:.3px;">Heartside Vet Clinic</div>
-                    <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Pet Lodging History</div>
-                    <div style="font-size:13px;color:#334155;margin-top:6px;">Patient: <strong id="plhPrintPetName"></strong></div>
+                <div class="plh-print-header" style="display:none;padding:22px 28px 16px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:16px;">
+                    <img src="logo1.png" alt="Heartside Vet" style="width:56px;height:56px;object-fit:contain;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto;">
+                    <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.4px;line-height:1.2;">Heartside Vet Clinic</div>
+                    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;font-weight:600;">Pet Lodging History</div>
+                    <div style="font-size:13px;color:#334155;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;">Patient: <strong id="plhPrintPetName" style="color:#1e3a5f;"></strong></div>
                 </div>
 
                 <div id="plhLoading" class="text-center p-5 text-muted">
@@ -502,8 +596,9 @@ function vfield($label, $id, $extraClass = '', $col = 6) {
                 </div>
 
                 <!-- Print-only footer -->
-                <div class="plh-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin-top:20px;padding:10px 18px;text-align:center;">
-                    <div style="font-size:10px;color:#94a3b8;">Printed from Heartside Vet Clinic Management Portal &nbsp;·&nbsp; <span id="plhPrintDate"></span></div>
+                <div class="plh-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin-top:20px;padding:12px 18px 4px;text-align:center;">
+                    <div style="font-size:10px;color:#94a3b8;letter-spacing:.3px;">Heartside Vet Clinic Management System &nbsp;·&nbsp; <span id="plhPrintDate"></span></div>
+                    <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">This document is computer-generated and valid without a signature.</div>
                 </div>
             </div>
             <div class="modal-footer" style="background:#f8fafc;border-top:1px solid var(--border);">
@@ -521,19 +616,27 @@ function vfield($label, $id, $extraClass = '', $col = 6) {
             <i class="bi bi-house-heart-fill" style="color:#7c3aed;"></i> Lodging Details
         </span>
         <div style="display:flex;gap:8px;align-items:center;">
-            <button type="button" onclick="printLodgeCard()" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:#f8fafc;color:var(--dark);cursor:pointer;">
-                <i class="bi bi-printer"></i> Print
-            </button>
+            <div class="modal-export-wrap">
+                <button type="button" class="btn-modal-export" onclick="toggleExportMenu('ldgViewExportMenu',this)">
+                    <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+                </button>
+                <div class="modal-export-menu" id="ldgViewExportMenu">
+                    <div class="export-menu-label">Export As</div>
+                    <div class="export-menu-item" onclick="window.print();document.getElementById('ldgViewExportMenu').classList.remove('show');">
+                        <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF / Print
+                    </div>
+                </div>
+            </div>
             <button type="button" class="btn-close" data-bs-dismiss="modal" style="font-size:11px;"></button>
         </div>
     </div>
     <div class="modal-body p-0" id="lodgePrintArea">
         <!-- Print-only header -->
-        <div class="lodge-print-header" style="display:none;padding:18px 24px 14px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:4px;">
-            <img src="logo1.png" alt="Heartside Vet" style="width:48px;height:48px;object-fit:contain;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto;">
-            <div style="font-size:18px;font-weight:800;color:#1e3a5f;letter-spacing:.3px;">Heartside Vet Clinic</div>
-            <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Lodging Record</div>
-            <div style="font-size:13px;color:#334155;margin-top:6px;">Record: <strong id="lodgePrintID"></strong> &nbsp;·&nbsp; Patient: <strong id="lodgePrintPet"></strong></div>
+        <div class="lodge-print-header" style="display:none;padding:22px 28px 16px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:8px;">
+            <img src="logo1.png" alt="Heartside Vet" style="width:56px;height:56px;object-fit:contain;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto;">
+            <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.4px;line-height:1.2;">Heartside Vet Clinic</div>
+            <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;font-weight:600;">Lodging Record</div>
+            <div style="font-size:13px;color:#334155;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;">Record: <strong id="lodgePrintID" style="color:#1e3a5f;"></strong> &nbsp;&nbsp;·&nbsp;&nbsp; Patient: <strong id="lodgePrintPet" style="color:#1e3a5f;"></strong></div>
         </div>
 
         <div style="padding:16px 20px;"><div class="row g-3">
@@ -546,8 +649,9 @@ function vfield($label, $id, $extraClass = '', $col = 6) {
         </div></div>
 
         <!-- Print-only footer -->
-        <div class="lodge-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin:16px 20px 0;padding:10px 0;text-align:center;">
-            <div style="font-size:10px;color:#94a3b8;">Printed from Heartside Vet Clinic Management Portal &nbsp;·&nbsp; <span id="lodgePrintDate"></span></div>
+        <div class="lodge-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin:20px 24px 0;padding:12px 0 4px;text-align:center;">
+            <div style="font-size:10px;color:#94a3b8;letter-spacing:.3px;">Heartside Vet Clinic Management System &nbsp;·&nbsp; <span id="lodgePrintDate"></span></div>
+            <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">This document is computer-generated and valid without a signature.</div>
         </div>
     </div>
     <div class="modal-footer"><button type="button" class="btn-main btn-outline" data-bs-dismiss="modal">Close</button></div>

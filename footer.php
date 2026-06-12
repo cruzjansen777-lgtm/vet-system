@@ -8,7 +8,200 @@ $isWelcomePage = (basename($_SERVER['PHP_SELF']) == 'welcome.php');
 </div><!-- end #main-wrapper -->
 <?php endif; ?>
 
+<style>
+@media print {
+    /* Default: hide everything, then reveal only the table marked for printing */
+    body.printing-table * { visibility: hidden; }
+    body.printing-table .print-target,
+    body.printing-table .print-target * { visibility: visible; }
+    body.printing-table .print-target {
+        position: absolute; top: 0; left: 0; width: 100%;
+        border: none; box-shadow: none;
+    }
+    /* Branded header/footer injected by exportPDF() */
+    body.printing-table #pdf-table-header,
+    body.printing-table #pdf-table-header * { visibility: visible !important; }
+    body.printing-table #pdf-table-footer,
+    body.printing-table #pdf-table-footer * { visibility: visible !important; }
+    body.printing-table #pdf-table-header { position: absolute; top: 0; left: 0; width: 100%; }
+    /* Hide the Actions column (always last) when printing a table */
+    body.printing-table .print-target th:last-child,
+    body.printing-table .print-target td:last-child { display: none; }
+
+    body.printing-table .modern-table thead tr th {
+        background: #1e3a5f !important; color: #fff !important;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    body.printing-table .modern-table tbody tr:nth-child(even) td { background: #f8fafc !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+    @page { margin: 1.5cm; size: landscape; }
+}
+</style>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<script>
+/* ══════════════════════════════════════
+   GLOBAL EXPORT DROPDOWN SYSTEM
+   ══════════════════════════════════════ */
+function toggleExportMenu(menuId, btnEl) {
+    const menu = document.getElementById(menuId);
+    document.querySelectorAll('.export-menu, .modal-export-menu').forEach(m => {
+        if (m.id !== menuId) { m.classList.remove('show'); if(m._btn) m._btn.classList.remove('open'); }
+    });
+    const open = menu.classList.toggle('show');
+    btnEl.classList.toggle('open', open);
+    menu._btn = btnEl;
+}
+/* ── Table PDF / Print export ──
+   Injects a branded clinic header + footer above/below the table,
+   hides everything else, prints, then removes the injected elements. */
+function exportPDF(tableSelector) {
+    const tbl = document.querySelector(tableSelector || '.modern-table');
+    if (!tbl) return;
+
+    document.querySelectorAll('.modern-table').forEach(t => t.classList.remove('print-target'));
+    tbl.classList.add('print-target');
+
+    // ── Detect module title from page heading ──
+    const headingEl = document.querySelector('.page-title, h1.module-title, .topbar-title, h4');
+    const moduleTitle = headingEl ? headingEl.innerText.trim() : document.title.replace('Heartside Vet — ','');
+    const dateStr = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+    const rowCount = tbl.querySelectorAll('tbody tr').length;
+
+    // ── Build branded header ──
+    const hdr = document.createElement('div');
+    hdr.id = 'pdf-table-header';
+    hdr.innerHTML = `
+      <div style="text-align:center;padding:18px 24px 14px;border-bottom:2px dashed #e2e8f0;margin-bottom:12px;">
+        <img src="logo1.png" alt="Heartside Vet" style="width:52px;height:52px;object-fit:contain;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto;">
+        <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.4px;line-height:1.2;">Heartside Vet Clinic</div>
+        <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;font-weight:600;">${moduleTitle}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:6px;padding-top:6px;border-top:1px solid #f1f5f9;">
+          Generated: <strong style="color:#1e3a5f;">${dateStr}</strong>
+          &nbsp;·&nbsp; <strong style="color:#1e3a5f;">${rowCount}</strong> record${rowCount !== 1 ? 's' : ''}
+        </div>
+      </div>`;
+    tbl.parentNode.insertBefore(hdr, tbl);
+
+    // ── Build branded footer ──
+    const ftr = document.createElement('div');
+    ftr.id = 'pdf-table-footer';
+    ftr.innerHTML = `
+      <div style="border-top:2px dashed #e2e8f0;margin-top:16px;padding:10px 0 4px;text-align:center;">
+        <div style="font-size:10px;color:#94a3b8;letter-spacing:.3px;">Heartside Vet Clinic Management System &nbsp;·&nbsp; ${dateStr}</div>
+        <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">This document is computer-generated and valid without a signature.</div>
+      </div>`;
+    tbl.parentNode.insertBefore(ftr, tbl.nextSibling);
+
+    document.body.classList.add('printing-table');
+    setTimeout(() => window.print(), 50);
+}
+window.addEventListener('afterprint', function() {
+    document.body.classList.remove('printing-table');
+    // Clean up injected header/footer
+    ['pdf-table-header','pdf-table-footer'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.remove();
+    });
+});
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.export-dropdown-wrap') && !e.target.closest('.modal-export-wrap')) {
+        document.querySelectorAll('.export-menu, .modal-export-menu').forEach(m => m.classList.remove('show'));
+        document.querySelectorAll('.btn-export, .btn-modal-export').forEach(b => b.classList.remove('open'));
+    }
+});
+function tableToArray(tbl) {
+    const rows = [];
+    tbl.querySelectorAll('tr').forEach(tr => {
+        const cells = [];
+        tr.querySelectorAll('th, td').forEach(td => cells.push(td.innerText.trim()));
+        rows.push(cells);
+    });
+    const headers = rows[0] || [];
+    const actIdx = headers.findIndex(h => h.toLowerCase() === 'actions');
+    if (actIdx >= 0) rows.forEach(r => r.splice(actIdx, 1));
+    return rows;
+}
+function exportCSV(tableSelector, filename) {
+    const tbl = document.querySelector(tableSelector || '.modern-table');
+    if (!tbl) return;
+    const data = tableToArray(tbl);
+    const csv = data.map(r => r.map(c => '"' + c.replace(/"/g,'""') + '"').join(',')).join('\n');
+    downloadBlob(csv, (filename||'export')+'.csv', 'text/csv');
+}
+function exportXLSX(tableSelector, filename, fmtXls) {
+    const tbl = document.querySelector(tableSelector || '.modern-table');
+    if (!tbl) return;
+    const ws = XLSX.utils.aoa_to_sheet(tableToArray(tbl));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+    XLSX.writeFile(wb, (filename||'export') + (fmtXls ? '.xls' : '.xlsx'));
+}
+function exportDOCX(tableSelector, filename, title) {
+    const tbl = document.querySelector(tableSelector || '.modern-table');
+    if (!tbl) return;
+    const data = tableToArray(tbl);
+    const headers = data[0] || [];
+    const body = data.slice(1);
+    const docTitle = escXml(title || filename || 'Export');
+    const dateStr = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+    const rowCount = body.length;
+    const thCells = headers.map(h => `<th style="background:#1e3a5f;color:#ffffff;font-size:10pt;font-weight:bold;padding:6px 8px;border:1px solid #cbd5e1;text-align:left;">${escXml(h)}</th>`).join('');
+    const bodyRows = body.map((row,i) => `<tr style="${i % 2 ? 'background:#f8fafc;' : ''}">${headers.map((_,j) => `<td style="font-size:9pt;padding:5px 8px;border:1px solid #cbd5e1;">${escXml(row[j]||'')}</td>`).join('')}</tr>`).join('');
+    // Word-compatible HTML document — consistent with PDF/print header style
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<title>${docTitle}</title>
+<!--[if gte mso 9]>
+<xml>
+<w:WordDocument>
+<w:View>Print</w:View>
+<w:Zoom>100</w:Zoom>
+<w:DoNotOptimizeForBrowser/>
+</w:WordDocument>
+</xml>
+<![endif]-->
+<style>
+@page { size: 21cm 29.7cm; margin: 1.5cm; }
+body { font-family: Calibri, Arial, sans-serif; color:#0f172a; }
+table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+.clinic-name { text-align:center; color:#1e3a5f; font-size:18pt; font-weight:800; margin:0; letter-spacing:.4px; }
+.report-type { text-align:center; color:#94a3b8; font-size:9pt; font-weight:600; text-transform:uppercase; letter-spacing:1.5px; margin:4px 0 0; }
+.meta { text-align:center; color:#64748b; font-size:9pt; margin:6px 0 0; padding-top:6px; border-top:1px solid #f1f5f9; }
+.header-wrap { padding-bottom:14px; border-bottom:2px dashed #e2e8f0; margin-bottom:12px; text-align:center; }
+.record-count { color:#1e3a5f; font-weight:700; }
+.footer-note { text-align:center; color:#94a3b8; font-size:8pt; margin-top:16px; padding-top:10px; border-top:2px dashed #e2e8f0; }
+.footer-sub { text-align:center; color:#cbd5e1; font-size:8pt; margin-top:2px; }
+</style>
+</head>
+<body>
+<div class="header-wrap">
+  <div class="clinic-name">Heartside Vet Clinic</div>
+  <div class="report-type">${docTitle}</div>
+  <div class="meta">Generated: <span class="record-count">${dateStr}</span> &nbsp;·&nbsp; <span class="record-count">${rowCount}</span> record${rowCount !== 1 ? 's' : ''}</div>
+</div>
+<table>
+<thead><tr>${thCells}</tr></thead>
+<tbody>${bodyRows}</tbody>
+</table>
+<div class="footer-note">Heartside Vet Clinic Management System &nbsp;·&nbsp; ${dateStr}</div>
+<div class="footer-sub">This document is computer-generated and valid without a signature.</div>
+</body>
+</html>`;
+    downloadBlob('\ufeff' + html, (filename||'export')+'.doc', 'application/msword');
+}
+function escXml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function downloadBlob(content, filename, mime) {
+    const blob = new Blob([content], { type: mime });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+}
+</script>
 <script>
 // Keep script initializations contained only within working application frames
 <?php if (!$isWelcomePage): ?>

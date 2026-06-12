@@ -116,6 +116,13 @@ $today     = $conn->query("SELECT COUNT(*) FROM appointments WHERE IsDeleted=0 A
 
 // Fetch services with prices for the dropdown
 $servicesList = $conn->query("SELECT ServiceID, ServiceName, Price FROM services WHERE IsActive=1 AND IsDeleted=0 ORDER BY ServiceName")->fetch_all(MYSQLI_ASSOC);
+
+// Date range filter (filters by Appointment Date)
+$dateFrom = $_GET['date_from'] ?? '';
+$dateTo   = $_GET['date_to']   ?? '';
+$dateSql  = '';
+if ($dateFrom !== '') $dateSql .= " AND DATE(a.AppointmentDate) >= '" . $conn->real_escape_string($dateFrom) . "'";
+if ($dateTo   !== '') $dateSql .= " AND DATE(a.AppointmentDate) <= '" . $conn->real_escape_string($dateTo) . "'";
 ?>
 
 <div class="page-header">
@@ -124,6 +131,38 @@ $servicesList = $conn->query("SELECT ServiceID, ServiceName, Price FROM services
         <p>Manage clinic appointments</p>
     </div>
     <div class="page-header-actions">
+        <form method="get" class="date-filter-form">
+            <input type="date" name="date_from" value="<?= htmlspecialchars($dateFrom) ?>" class="date-filter-input" title="Appointment date from">
+            <span class="date-filter-sep">to</span>
+            <input type="date" name="date_to" value="<?= htmlspecialchars($dateTo) ?>" class="date-filter-input" title="Appointment date to">
+            <button type="submit" class="btn-date-filter" title="Filter by appointment date"><i class="bi bi-funnel-fill"></i></button>
+            <?php if ($dateFrom !== '' || $dateTo !== ''): ?>
+            <a href="appointments.php" class="btn-date-clear" title="Clear date filter"><i class="bi bi-x-lg"></i></a>
+            <?php endif; ?>
+        </form>
+        <div class="export-dropdown-wrap">
+            <button class="btn-export" onclick="toggleExportMenu('exportMenuAppts',this)">
+                <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+            </button>
+            <div class="export-menu" id="exportMenuAppts">
+                <div class="export-menu-label">Export As</div>
+                <div class="export-menu-item" onclick="exportCSV('.modern-table','appointments_list');document.getElementById('exportMenuAppts').classList.remove('show');">
+                    <div class="ei-icon ei-csv"><i class="bi bi-filetype-csv"></i></div> CSV
+                </div>
+                <div class="export-menu-item" onclick="exportXLSX('.modern-table','appointments_list',true);document.getElementById('exportMenuAppts').classList.remove('show');">
+                    <div class="ei-icon ei-xls"><i class="bi bi-file-earmark-spreadsheet"></i></div> XLS
+                </div>
+                <div class="export-menu-item" onclick="exportXLSX('.modern-table','appointments_list',false);document.getElementById('exportMenuAppts').classList.remove('show');">
+                    <div class="ei-icon ei-xlsx"><i class="bi bi-file-earmark-spreadsheet-fill"></i></div> XLSX
+                </div>
+                <div class="export-menu-item" onclick="exportDOCX('.modern-table','appointments_list','Appointments List');document.getElementById('exportMenuAppts').classList.remove('show');">
+                    <div class="ei-icon ei-docx"><i class="bi bi-file-earmark-word"></i></div> DOCX
+                </div>
+                <div class="export-menu-item" onclick="exportPDF('.modern-table');document.getElementById('exportMenuAppts').classList.remove('show');">
+                    <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF
+                </div>
+            </div>
+        </div>
         <button class="btn-main btn-teal" data-bs-toggle="modal" data-bs-target="#apptModal" onclick="openAdd()">
             <i class="bi bi-plus-lg"></i> New Appointment
         </button>
@@ -176,7 +215,14 @@ $servicesList = $conn->query("SELECT ServiceID, ServiceName, Price FROM services
             </thead>
             <tbody>
                 <?php
-                $res = $conn->query("SELECT a.*, p.PetName, CONCAT(c.FirstName,' ',c.LastName) AS Owner, s.ServiceName FROM appointments a JOIN pets p ON a.PetID=p.PetID JOIN clients c ON a.ClientID=c.ClientID LEFT JOIN services s ON a.ServiceID=s.ServiceID WHERE a.IsDeleted=0 ORDER BY a.AppointmentID DESC");
+                $res = $conn->query("SELECT a.*, p.PetName, CONCAT(c.FirstName,' ',c.LastName) AS Owner, s.ServiceName,
+                                            con.ConsultationID AS LinkedConsultID
+                                     FROM appointments a 
+                                     JOIN pets p ON a.PetID=p.PetID 
+                                     JOIN clients c ON a.ClientID=c.ClientID 
+                                     LEFT JOIN services s ON a.ServiceID=s.ServiceID 
+                                     LEFT JOIN consultations con ON con.AppointmentID=a.AppointmentID AND con.IsDeleted=0
+                                     WHERE a.IsDeleted=0 $dateSql ORDER BY a.AppointmentID DESC");
                 if ($res->num_rows == 0) echo '<tr class="empty-row"><td colspan="8">No appointments found.</td></tr>';
 
                 $highlightApptID = isset($_GET['highlight']) ? intval($_GET['highlight']) : 0;
@@ -195,7 +241,17 @@ $servicesList = $conn->query("SELECT ServiceID, ServiceName, Price FROM services
                         <td><?= htmlspecialchars($row['Owner']) ?></td>
                         <td><?= htmlspecialchars($row['Reason'] ?: ($row['ServiceName'] ?: '—')) ?></td>
                         <td style="font-size:12px;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?= htmlspecialchars($row['Notes'] ?? '—') ?></td>
-                        <td><span class="badge-modern <?= $badgeMap[$status] ?? 'badge-scheduled' ?>"><?= $status ?></span></td>
+                        <td>
+                            <span class="badge-modern <?= $badgeMap[$status] ?? 'badge-scheduled' ?>"><?= $status ?></span>
+                            <?php if (!empty($row['LinkedConsultID'])): ?>
+                            <div style="margin-top:4px;">
+                                <span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#16a34a;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;padding:1px 6px;">
+                                    <i class="bi bi-clipboard2-pulse-fill"></i> Consulted
+                                </span>
+                                <div style="font-size:10px;color:var(--muted);margin-top:1px;">CON-<?= str_pad($row['LinkedConsultID'], 4, '0', STR_PAD_LEFT) ?></div>
+                            </div>
+                            <?php endif; ?>
+                        </td>
                         <td>
                             <div style="display:flex;gap:6px;">
                                 <button class="btn-icon btn-icon-view" data-row="<?= htmlspecialchars(json_encode($row), ENT_QUOTES) ?>" onclick="viewAppt(JSON.parse(this.dataset.row))" title="View Details"><i class="bi bi-eye"></i></button>
@@ -222,20 +278,28 @@ $servicesList = $conn->query("SELECT ServiceID, ServiceName, Price FROM services
                     <i class="bi bi-calendar2-check-fill" style="color:var(--teal);"></i> Appointment Details
                 </span>
                 <div style="display:flex;gap:8px;align-items:center;">
-                    <button type="button" onclick="printApptCard()" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:#f8fafc;color:var(--dark);cursor:pointer;">
-                        <i class="bi bi-printer"></i> Print
-                    </button>
+                    <div class="modal-export-wrap">
+                        <button type="button" class="btn-modal-export" onclick="toggleExportMenu('apptViewExportMenu',this)">
+                            <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+                        </button>
+                        <div class="modal-export-menu" id="apptViewExportMenu">
+                            <div class="export-menu-label">Export As</div>
+                            <div class="export-menu-item" onclick="window.print();document.getElementById('apptViewExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF / Print
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" style="font-size:11px;"></button>
                 </div>
             </div>
 
             <div class="modal-body p-0" id="apptPrintArea">
                 <!-- Print-only header -->
-                <div class="appt-print-header" style="display:none;padding:18px 24px 14px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:4px;">
-                    <img src="logo1.png" alt="Heartside Vet" style="width:48px;height:48px;object-fit:contain;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto;">
-                    <div style="font-size:18px;font-weight:800;color:#1e3a5f;letter-spacing:.3px;">Heartside Vet Clinic</div>
-                    <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Appointment Record</div>
-                    <div style="font-size:13px;color:#334155;margin-top:6px;">Appointment: <strong id="apptPrintID"></strong> &nbsp;·&nbsp; Patient: <strong id="apptPrintPet"></strong></div>
+                <div class="appt-print-header" style="display:none;padding:22px 28px 16px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:8px;">
+                    <img src="logo1.png" alt="Heartside Vet" style="width:56px;height:56px;object-fit:contain;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto;">
+                    <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.4px;line-height:1.2;">Heartside Vet Clinic</div>
+                    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;font-weight:600;">Appointment Record</div>
+                    <div style="font-size:13px;color:#334155;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;">Appointment: <strong id="apptPrintID" style="color:#1e3a5f;"></strong> &nbsp;&nbsp;·&nbsp;&nbsp; Patient: <strong id="apptPrintPet" style="color:#1e3a5f;"></strong></div>
                 </div>
 
                 <div style="padding:16px 20px;">
@@ -274,6 +338,13 @@ $servicesList = $conn->query("SELECT ServiceID, ServiceName, Price FROM services
                             <div class="vm-label"><i class="bi bi-chat-left-text me-1"></i>Additional Notes</div>
                             <div class="vm-notes-block" id="vApptNotes">—</div>
                         </div>
+                        <div class="col-12" id="vApptConsultWrap" style="display:none;">
+                            <div class="vm-label"><i class="bi bi-clipboard2-pulse-fill me-1" style="color:#16a34a;"></i>Linked Consultation</div>
+                            <div>
+                                <span style="font-weight:700;font-size:13px;color:#16a34a;" id="vApptConsultID">—</span>
+                                <span style="margin-left:8px;font-size:10px;font-weight:700;color:#16a34a;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;padding:2px 6px;"><i class="bi bi-clipboard2-pulse-fill me-1"></i>Consulted</span>
+                            </div>
+                        </div>
                         <div class="col-6" id="vApptUpdatedWrap" style="display:none;">
                             <div class="vm-label"><i class="bi bi-clock-history me-1"></i>Last Updated</div>
                             <div class="vm-value" id="vApptUpdated" style="font-size:13px;">—</div>
@@ -286,8 +357,9 @@ $servicesList = $conn->query("SELECT ServiceID, ServiceName, Price FROM services
                 </div>
 
                 <!-- Print-only footer -->
-                <div class="appt-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin:16px 20px 0;padding:10px 0;text-align:center;">
-                    <div style="font-size:10px;color:#94a3b8;">Printed from Heartside Vet Clinic Management Portal &nbsp;·&nbsp; <span id="apptPrintDate"></span></div>
+                <div class="appt-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin:20px 24px 0;padding:12px 0 4px;text-align:center;">
+                    <div style="font-size:10px;color:#94a3b8;letter-spacing:.3px;">Heartside Vet Clinic Management System &nbsp;·&nbsp; <span id="apptPrintDate"></span></div>
+                    <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">This document is computer-generated and valid without a signature.</div>
                 </div>
             </div>
 
@@ -300,14 +372,32 @@ $servicesList = $conn->query("SELECT ServiceID, ServiceName, Price FROM services
 
 <style>
 @media print {
+    /* ── Reset ── */
     body * { visibility: hidden; }
+    body { margin: 0; padding: 0; background: #fff; font-size: 13px; font-family: 'Inter', system-ui, sans-serif; }
+
+    /* ── Appointment Detail print ── */
     #apptPrintArea, #apptPrintArea * { visibility: visible; }
-    #apptPrintArea { position: fixed; top: 0; left: 0; width: 100%; padding: 32px; }
+    #apptPrintArea {
+        position: fixed; top: 0; left: 0; width: 100%;
+        padding: 40px; background: #fff; box-sizing: border-box;
+    }
     .appt-print-header, .appt-print-footer { display: block !important; }
+
+    /* ── Pet Appointment History print ── */
     #pahPrintArea, #pahPrintArea * { visibility: visible; }
-    #pahPrintArea { position: fixed; top: 0; left: 0; width: 100%; padding: 32px; }
+    #pahPrintArea {
+        position: fixed; top: 0; left: 0; width: 100%;
+        padding: 40px; background: #fff; box-sizing: border-box;
+    }
     .pah-print-header, .pah-print-footer { display: block !important; }
-    .modal, .modal-dialog, .modal-content { box-shadow: none !important; border: none !important; }
+
+    /* ── Shared modal cleanup ── */
+    .modal, .modal-dialog, .modal-content {
+        box-shadow: none !important; border: none !important;
+    }
+    .vm-header-band { border: none !important; background: transparent !important; }
+    .badge-modern { border: 1px solid #ccc !important; }
 }
 </style>
 
@@ -327,19 +417,39 @@ $servicesList = $conn->query("SELECT ServiceID, ServiceName, Price FROM services
                     </div>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:12px;">
-                    <button type="button" onclick="printPetApptHistory()" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:#fff;color:var(--dark);cursor:pointer;">
-                        <i class="bi bi-printer"></i> Print
-                    </button>
+                    <div class="modal-export-wrap">
+                        <button type="button" class="btn-modal-export" onclick="toggleExportMenu('apptHistExportMenu',this)">
+                            <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+                        </button>
+                        <div class="modal-export-menu" id="apptHistExportMenu">
+                            <div class="export-menu-label">Export As</div>
+                            <div class="export-menu-item" onclick="exportCSV('#pahPrintArea table','pet_appt_history');document.getElementById('apptHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-csv"><i class="bi bi-filetype-csv"></i></div> CSV
+                            </div>
+                            <div class="export-menu-item" onclick="exportXLSX('#pahPrintArea table','pet_appt_history',true);document.getElementById('apptHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-xls"><i class="bi bi-file-earmark-spreadsheet"></i></div> XLS
+                            </div>
+                            <div class="export-menu-item" onclick="exportXLSX('#pahPrintArea table','pet_appt_history',false);document.getElementById('apptHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-xlsx"><i class="bi bi-file-earmark-spreadsheet-fill"></i></div> XLSX
+                            </div>
+                            <div class="export-menu-item" onclick="exportDOCX('#pahPrintArea table','pet_appt_history','Pet Appointment History');document.getElementById('apptHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-docx"><i class="bi bi-file-earmark-word"></i></div> DOCX
+                            </div>
+                            <div class="export-menu-item" onclick="window.print();document.getElementById('apptHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF / Print
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
             </div>
             <div class="modal-body p-0" id="pahPrintArea">
                 <!-- Print-only header -->
-                <div class="pah-print-header" style="display:none;padding:18px 24px 14px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:16px;">
-                    <img src="logo1.png" alt="Heartside Vet" style="width:48px;height:48px;object-fit:contain;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto;">
-                    <div style="font-size:18px;font-weight:800;color:#1e3a5f;letter-spacing:.3px;">Heartside Vet Clinic</div>
-                    <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Pet Appointment History</div>
-                    <div style="font-size:13px;color:#334155;margin-top:6px;">Patient: <strong id="pahPrintPetName"></strong> &nbsp;·&nbsp; Owner: <strong id="pahPrintOwner"></strong></div>
+                <div class="pah-print-header" style="display:none;padding:22px 28px 16px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:16px;">
+                    <img src="logo1.png" alt="Heartside Vet" style="width:56px;height:56px;object-fit:contain;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto;">
+                    <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.4px;line-height:1.2;">Heartside Vet Clinic</div>
+                    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;font-weight:600;">Pet Appointment History</div>
+                    <div style="font-size:13px;color:#334155;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;">Patient: <strong id="pahPrintPetName" style="color:#1e3a5f;"></strong> &nbsp;&nbsp;·&nbsp;&nbsp; Owner: <strong id="pahPrintOwner" style="color:#1e3a5f;"></strong></div>
                 </div>
 
                 <div id="pahLoading" class="text-center p-5 text-muted">
@@ -366,8 +476,9 @@ $servicesList = $conn->query("SELECT ServiceID, ServiceName, Price FROM services
                 </div>
 
                 <!-- Print-only footer -->
-                <div class="pah-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin-top:20px;padding:10px 18px;text-align:center;">
-                    <div style="font-size:10px;color:#94a3b8;">Printed from Heartside Vet Clinic Management Portal &nbsp;·&nbsp; <span id="pahPrintDate"></span></div>
+                <div class="pah-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin-top:20px;padding:12px 18px 4px;text-align:center;">
+                    <div style="font-size:10px;color:#94a3b8;letter-spacing:.3px;">Heartside Vet Clinic Management System &nbsp;·&nbsp; <span id="pahPrintDate"></span></div>
+                    <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">This document is computer-generated and valid without a signature.</div>
                 </div>
             </div>
             <div class="modal-footer" style="background:#f8fafc;border-top:1px solid var(--border);">
@@ -623,6 +734,16 @@ $servicesList = $conn->query("SELECT ServiceID, ServiceName, Price FROM services
         document.getElementById('vApptOwner').textContent   = r.Owner      || '—';
         document.getElementById('vApptService').textContent = r.Reason     || r.ServiceName || '—';
         document.getElementById('vApptNotes').textContent   = r.Notes      || '—';
+        // Show linked consultation if any
+        const consultBadgeWrap = document.getElementById('vApptConsultWrap');
+        if (consultBadgeWrap) {
+            if (r.LinkedConsultID) {
+                document.getElementById('vApptConsultID').textContent = 'CON-' + String(r.LinkedConsultID).padStart(4,'0');
+                consultBadgeWrap.style.display = '';
+            } else {
+                consultBadgeWrap.style.display = 'none';
+            }
+        }
         const apptUpdWrap    = document.getElementById('vApptUpdatedWrap');
         const apptReasonWrap = document.getElementById('vApptReasonWrap');
         if (r.UpdatedAt && r.UpdateReason) {

@@ -3,40 +3,35 @@ require_once 'guard.php';
 include('dbconnect.php');
 date_default_timezone_set('Asia/Manila');
 
-// ── CSV EXPORT ROUTER ──
-if (isset($_GET['export_csv'])) {
-    $target   = $_GET['export_csv'];
-    $dateFrom = $_GET['from'] ?? date('Y-m-01');
-    $dateTo   = $_GET['to']   ?? date('Y-m-d');
-
-    header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename=heartside_' . $target . '_' . date('Ymd_His') . '.csv');
-    $out = fopen('php://output', 'w');
+// ── EXPORT HELPERS (CSV / XLS / XLSX / DOCX) ──
+function reports_export_data($conn, $target, $dateFrom, $dateTo) {
+    $headers = [];
+    $rows    = [];
 
     switch ($target) {
         case 'clients':
-            fputcsv($out, ['Client ID', 'Full Name', 'Email', 'Phone', 'Address', 'Date Registered']);
-            $rows = $conn->query("SELECT ClientID,
+            $headers = ['Client ID', 'Full Name', 'Email', 'Phone', 'Address', 'Date Registered'];
+            $res = $conn->query("SELECT ClientID,
                 CONCAT(FirstName,' ',LastName) AS FullName,
                 Email, Phone, Address,
                 DATE_FORMAT(CreatedAt,'%Y-%m-%d') AS DateRegistered
                 FROM clients WHERE IsDeleted=0 ORDER BY CreatedAt DESC");
-            while ($r = $rows->fetch_assoc()) fputcsv($out, $r);
+            $rows = $res->fetch_all(MYSQLI_NUM);
             break;
 
         case 'pets':
-            fputcsv($out, ['Pet ID', 'Pet Name', 'Owner', 'Species', 'Breed', 'Gender', 'Date of Birth', 'Weight (kg)']);
-            $rows = $conn->query("SELECT p.PetID, p.PetName,
+            $headers = ['Pet ID', 'Pet Name', 'Owner', 'Species', 'Breed', 'Gender', 'Date of Birth', 'Weight (kg)'];
+            $res = $conn->query("SELECT p.PetID, p.PetName,
                 CONCAT(c.FirstName,' ',c.LastName) AS Owner,
                 p.Species, p.Breed, p.Gender, p.DateOfBirth, p.Weight
                 FROM pets p JOIN clients c ON p.ClientID=c.ClientID
                 WHERE p.IsDeleted=0 ORDER BY p.PetName");
-            while ($r = $rows->fetch_assoc()) fputcsv($out, $r);
+            $rows = $res->fetch_all(MYSQLI_NUM);
             break;
 
         case 'appointments':
-            fputcsv($out, ['ID', 'Date', 'Time', 'Pet', 'Owner', 'Service', 'Reason', 'Status']);
-            $rows = $conn->query("SELECT a.AppointmentID,
+            $headers = ['ID', 'Date', 'Time', 'Pet', 'Owner', 'Service', 'Reason', 'Status'];
+            $res = $conn->query("SELECT a.AppointmentID,
                 a.AppointmentDate, a.AppointmentTime,
                 p.PetName,
                 CONCAT(c.FirstName,' ',c.LastName) AS Owner,
@@ -49,12 +44,12 @@ if (isset($_GET['export_csv'])) {
                 WHERE a.IsDeleted=0
                 AND a.AppointmentDate BETWEEN '$dateFrom' AND '$dateTo'
                 ORDER BY a.AppointmentDate DESC, a.AppointmentTime DESC");
-            while ($r = $rows->fetch_assoc()) fputcsv($out, $r);
+            $rows = $res->fetch_all(MYSQLI_NUM);
             break;
 
         case 'consultations':
-            fputcsv($out, ['Consult ID', 'Date', 'Pet', 'Owner', 'Veterinarian', 'Chief Complaint', 'Diagnosis', 'Treatment', 'Prescription', 'Follow-Up']);
-            $rows = $conn->query("SELECT con.ConsultationID,
+            $headers = ['Consult ID', 'Date', 'Pet', 'Owner', 'Veterinarian', 'Chief Complaint', 'Diagnosis', 'Treatment', 'Prescription', 'Follow-Up'];
+            $res = $conn->query("SELECT con.ConsultationID,
                 DATE_FORMAT(con.ConsultationDate,'%Y-%m-%d') AS Date,
                 p.PetName,
                 CONCAT(c.FirstName,' ',c.LastName) AS Owner,
@@ -67,12 +62,12 @@ if (isset($_GET['export_csv'])) {
                 WHERE con.IsDeleted=0
                 AND DATE(con.ConsultationDate) BETWEEN '$dateFrom' AND '$dateTo'
                 ORDER BY con.ConsultationDate DESC");
-            while ($r = $rows->fetch_assoc()) fputcsv($out, $r);
+            $rows = $res->fetch_all(MYSQLI_NUM);
             break;
 
         case 'billing':
-            fputcsv($out, ['Bill ID', 'Date', 'Client', 'Pet', 'Total', 'Paid', 'Balance', 'Method', 'Status', 'Notes']);
-            $rows = $conn->query("SELECT b.BillingID,
+            $headers = ['Bill ID', 'Date', 'Client', 'Pet', 'Total', 'Paid', 'Balance', 'Method', 'Status', 'Notes'];
+            $res = $conn->query("SELECT b.BillingID,
                 b.BillingDate,
                 CONCAT(c.FirstName,' ',c.LastName) AS Client,
                 COALESCE(p.PetName,'—') AS Pet,
@@ -85,21 +80,21 @@ if (isset($_GET['export_csv'])) {
                 WHERE b.IsDeleted=0
                 AND b.BillingDate BETWEEN '$dateFrom' AND '$dateTo'
                 ORDER BY b.BillingDate DESC");
-            while ($r = $rows->fetch_assoc()) fputcsv($out, $r);
+            $rows = $res->fetch_all(MYSQLI_NUM);
             break;
 
         case 'services':
-            fputcsv($out, ['Service ID', 'Name', 'Category', 'Price', 'Duration (min)', 'Description', 'Status']);
-            $rows = $conn->query("SELECT ServiceID, ServiceName, Category,
+            $headers = ['Service ID', 'Name', 'Category', 'Price', 'Duration (min)', 'Description', 'Status'];
+            $res = $conn->query("SELECT ServiceID, ServiceName, Category,
                 Price, Duration, Description,
                 IF(IsActive=1,'Active','Inactive') AS Status
                 FROM services WHERE IsDeleted=0 ORDER BY ServiceName");
-            while ($r = $rows->fetch_assoc()) fputcsv($out, $r);
+            $rows = $res->fetch_all(MYSQLI_NUM);
             break;
 
         case 'lodging':
-            fputcsv($out, ['Lodging ID', 'Pet', 'Owner', 'Check-In', 'Check-Out', 'Cage #', 'Daily Rate', 'Status', 'Instructions']);
-            $rows = $conn->query("SELECT l.LodgingID,
+            $headers = ['Lodging ID', 'Pet', 'Owner', 'Check-In', 'Check-Out', 'Cage #', 'Daily Rate', 'Status', 'Instructions'];
+            $res = $conn->query("SELECT l.LodgingID,
                 p.PetName,
                 CONCAT(c.FirstName,' ',c.LastName) AS Owner,
                 l.CheckInDate, l.CheckOutDate,
@@ -108,10 +103,239 @@ if (isset($_GET['export_csv'])) {
                 JOIN pets p ON l.PetID=p.PetID
                 JOIN clients c ON l.ClientID=c.ClientID
                 WHERE l.IsDeleted=0 ORDER BY l.CheckInDate DESC");
-            while ($r = $rows->fetch_assoc()) fputcsv($out, $r);
+            $rows = $res->fetch_all(MYSQLI_NUM);
+            break;
+
+        case 'analytics':
+            $headers = ['Metric', 'Value'];
+            $k = $conn->query("SELECT
+                (SELECT COUNT(*) FROM clients WHERE IsActive=1) as totalClients,
+                (SELECT COUNT(*) FROM pets WHERE IsActive=1) as totalPets,
+                (SELECT COUNT(*) FROM appointments WHERE COALESCE(IsDeleted,0)=0 AND AppointmentDate BETWEEN '$dateFrom' AND '$dateTo') as totalAppt,
+                (SELECT COUNT(*) FROM appointments WHERE COALESCE(IsDeleted,0)=0 AND Status='Completed' AND AppointmentDate BETWEEN '$dateFrom' AND '$dateTo') as completedAppt,
+                (SELECT COUNT(*) FROM appointments WHERE COALESCE(IsDeleted,0)=0 AND Status='Cancelled' AND AppointmentDate BETWEEN '$dateFrom' AND '$dateTo') as cancelledAppt,
+                (SELECT COUNT(*) FROM lodging WHERE Status='Active') as activeLodging,
+                (SELECT COUNT(*) FROM clients WHERE IsActive=1 AND CreatedAt BETWEEN '$dateFrom' AND '$dateTo') as newClients
+            ")->fetch_assoc();
+            $b = $conn->query("
+                SELECT
+                    COALESCE(SUM(AmountPaid),0) as totalRevenue,
+                    COALESCE(SUM(CASE WHEN PaymentStatus!='Paid' THEN TotalAmount-AmountPaid END),0) as totalPending,
+                    COUNT(*) as totalBills,
+                    COUNT(CASE WHEN PaymentStatus='Paid' THEN 1 END) as paidBills
+                FROM billing
+                WHERE BillingDate BETWEEN '$dateFrom' AND '$dateTo'
+            ")->fetch_assoc();
+            $collectionRate = $b['totalBills'] > 0 ? round($b['paidBills'] / $b['totalBills'] * 100, 1) : 0;
+            $rows = [
+                ['Report Period', $dateFrom . ' to ' . $dateTo],
+                ['Active Clients', $k['totalClients']],
+                ['New Clients (Period)', $k['newClients']],
+                ['Active Pets', $k['totalPets']],
+                ['Total Appointments', $k['totalAppt']],
+                ['Completed Appointments', $k['completedAppt']],
+                ['Cancelled Appointments', $k['cancelledAppt']],
+                ['Active Lodging', $k['activeLodging']],
+                ['Total Revenue Collected', number_format((float) $b['totalRevenue'], 2)],
+                ['Total Pending Balance', number_format((float) $b['totalPending'], 2)],
+                ['Total Bills', $b['totalBills']],
+                ['Paid Bills', $b['paidBills']],
+                ['Collection Rate', $collectionRate . '%'],
+            ];
             break;
     }
+
+    return [$headers, $rows];
+}
+
+function reports_esc_xml($str) {
+    return htmlspecialchars((string) $str, ENT_QUOTES, 'UTF-8');
+}
+
+// ── Shared module branding (kept in sync with report_pdf.php $moduleMap) ──
+const REPORT_MODULE_META = [
+    'clients'       => ['label' => 'Clients / Owners',        'color' => '#3b82f6'],
+    'pets'          => ['label' => 'Pets / Patients',         'color' => '#ec4899'],
+    'appointments'  => ['label' => 'Appointments',            'color' => '#6366f1'],
+    'consultations' => ['label' => 'Medical History',         'color' => '#10b981'],
+    'billing'       => ['label' => 'Billing & Payments',      'color' => '#f97316'],
+    'services'      => ['label' => 'Clinic Services',         'color' => '#7c3aed'],
+    'lodging'       => ['label' => 'Lodging & Boarding',      'color' => '#7c3aed'],
+    'analytics'     => ['label' => 'Analytics & Performance', 'color' => '#ef4444'],
+];
+
+// ── Embed clinic logo as base64 for branded DOCX/XLSX headers ──
+function reports_logo_data_uri() {
+    static $uri = null;
+    if ($uri === null) {
+        $path = __DIR__ . '/logo1.png';
+        $uri  = (is_file($path))
+            ? 'data:image/jpeg;base64,' . base64_encode(file_get_contents($path))
+            : '';
+    }
+    return $uri;
+}
+
+function reports_export_csv($headers, $rows, $filenameBase) {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename=' . $filenameBase . '.csv');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, $headers);
+    foreach ($rows as $r) fputcsv($out, $r);
     fclose($out);
+}
+
+function reports_export_excel($headers, $rows, $filenameBase, $format, $sheetName, $title = '', $dateFrom = '', $dateTo = '', $hasDateRange = false) {
+    $mime = ($format === 'xlsx')
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'application/vnd.ms-excel';
+    header("Content-Type: $mime; charset=utf-8");
+    header('Content-Disposition: attachment; filename=' . $filenameBase . '.' . $format);
+
+    $generated = date('M d, Y h:i A');
+    $cols = max(count($headers), 1);
+
+    echo "<?xml version=\"1.0\"?>\n";
+    echo "<?mso-application progid=\"Excel.Sheet\"?>\n";
+    echo '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
+    echo '<Styles>'
+       . '<Style ss:ID="hdrClinic"><Font ss:Bold="1" ss:Size="14"/></Style>'
+       . '<Style ss:ID="hdrTitle"><Font ss:Bold="1" ss:Size="12" ss:Color="#0F172A"/></Style>'
+       . '<Style ss:ID="hdrMeta"><Font ss:Color="#64748B" ss:Size="9"/></Style>'
+       . '<Style ss:ID="thStyle"><Interior ss:Color="#F8FAFC" ss:Pattern="Solid"/><Font ss:Bold="1" ss:Color="#475569" ss:Size="9"/></Style>'
+       . '</Styles>';
+    echo '<Worksheet ss:Name="' . reports_esc_xml($sheetName) . '"><Table>';
+
+    // ── Branded header block ──
+    echo '<Row><Cell ss:StyleID="hdrClinic"><Data ss:Type="String">Heartside Veterinary Clinic</Data></Cell></Row>';
+    echo '<Row><Cell ss:StyleID="hdrTitle"><Data ss:Type="String">' . reports_esc_xml($title) . '</Data></Cell></Row>';
+    $metaLine = 'Generated: ' . $generated;
+    if ($hasDateRange) {
+        $metaLine .= '   |   Period: ' . date('M d, Y', strtotime($dateFrom)) . ' - ' . date('M d, Y', strtotime($dateTo));
+    }
+    echo '<Row><Cell ss:StyleID="hdrMeta"><Data ss:Type="String">' . reports_esc_xml($metaLine) . '</Data></Cell></Row>';
+    echo '<Row></Row>'; // spacer
+
+    echo '<Row>';
+    foreach ($headers as $h) {
+        echo '<Cell ss:StyleID="thStyle"><Data ss:Type="String">' . reports_esc_xml($h) . '</Data></Cell>';
+    }
+    echo '</Row>';
+
+    foreach ($rows as $r) {
+        echo '<Row>';
+        foreach ($r as $cell) {
+            $isNumber = is_numeric($cell) && $cell !== '' && !preg_match('/^0[0-9]/', (string) $cell);
+            $type = $isNumber ? 'Number' : 'String';
+            echo '<Cell><Data ss:Type="' . $type . '">' . reports_esc_xml($cell) . '</Data></Cell>';
+        }
+        echo '</Row>';
+    }
+
+    echo '</Table></Worksheet></Workbook>';
+}
+
+function reports_export_docx($headers, $rows, $filenameBase, $title, $color = '#0ea5e9', $moduleLabel = '', $dateFrom = '', $dateTo = '', $hasDateRange = false) {
+    header('Content-Type: application/msword; charset=utf-8');
+    header('Content-Disposition: attachment; filename=' . $filenameBase . '.doc');
+
+    $generated = date('M d, Y h:i A');
+    $logo = reports_logo_data_uri();
+
+    echo '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">';
+    echo '<head><meta charset="utf-8"><title>' . htmlspecialchars($title) . '</title></head>';
+    echo '<body style="font-family:Calibri,Arial,sans-serif;color:#1e293b;">';
+
+    // ── Branded header (logo + clinic name + report meta), matching PDF report-header ──
+    echo '<table width="100%" cellpadding="0" cellspacing="0" style="border:none;border-bottom:3px solid ' . htmlspecialchars($color) . ';margin-bottom:18px;">';
+    echo '<tr>';
+    echo '<td style="vertical-align:middle;padding-bottom:12px;width:60px;">';
+    if ($logo) {
+        echo '<img src="' . $logo . '" width="46" height="46" style="display:block;">';
+    }
+    echo '</td>';
+    echo '<td style="vertical-align:middle;padding-bottom:12px;">';
+    echo '<div style="font-size:20px;font-weight:800;color:#0f172a;">Heartside Vet</div>';
+    echo '<div style="font-size:12px;font-weight:600;color:' . htmlspecialchars($color) . ';margin-top:2px;">' . htmlspecialchars($moduleLabel ?: $title) . ' Report</div>';
+    echo '</td>';
+    echo '<td style="vertical-align:middle;text-align:right;padding-bottom:12px;font-size:10px;color:#64748b;line-height:1.6;">';
+    echo '<strong style="color:#0f172a;font-size:12px;">Generated: ' . $generated . '</strong><br>';
+    if ($hasDateRange) {
+        echo 'Date Range: ' . date('M d, Y', strtotime($dateFrom)) . ' &ndash; ' . date('M d, Y', strtotime($dateTo)) . '<br>';
+    } else {
+        echo 'All records as of today<br>';
+    }
+    echo 'Heartside Veterinary Clinic';
+    echo '</td>';
+    echo '</tr>';
+    echo '</table>';
+
+    // ── Module badge ──
+    echo '<div style="display:inline-block;background:' . htmlspecialchars($color) . '18;border:1px solid ' . htmlspecialchars($color) . '44;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;color:' . htmlspecialchars($color) . ';margin-bottom:14px;">' . htmlspecialchars($moduleLabel ?: $title) . '</div>';
+
+    // ── Record summary ──
+    echo '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:11px;color:#64748b;">';
+    echo '<strong style="font-size:18px;color:' . htmlspecialchars($color) . ';">' . number_format(count($rows)) . '</strong> total record' . (count($rows) === 1 ? '' : 's');
+    if ($hasDateRange) {
+        echo '&nbsp;&middot;&nbsp;' . date('M d, Y', strtotime($dateFrom)) . ' &ndash; ' . date('M d, Y', strtotime($dateTo));
+    }
+    echo '</div>';
+
+    // ── Data table ──
+    echo '<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;font-size:11px;border-color:#e2e8f0;">';
+    echo '<tr style="background:#f8fafc;">';
+    foreach ($headers as $h) echo '<th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#64748b;border-bottom:2px solid ' . htmlspecialchars($color) . '44;">' . htmlspecialchars((string) $h) . '</th>';
+    echo '</tr>';
+    if (empty($rows)) {
+        echo '<tr><td colspan="' . max(count($headers),1) . '" style="text-align:center;color:#94a3b8;padding:20px;">No records found' . ($hasDateRange ? ' for this date range.' : '.') . '</td></tr>';
+    } else {
+        foreach ($rows as $i => $r) {
+            $bg = ($i % 2 === 1) ? ' background:#fafafa;' : '';
+            echo '<tr>';
+            foreach ($r as $cell) echo '<td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;color:#1e293b;' . $bg . '">' . htmlspecialchars((string) $cell) . '</td>';
+            echo '</tr>';
+        }
+    }
+    echo '</table>';
+
+    // ── Footer note (matches PDF footer-note) ──
+    echo '<div style="text-align:center;font-size:9px;color:#94a3b8;margin-top:18px;padding-top:10px;border-top:1px solid #e2e8f0;">';
+    echo 'Heartside Vet &middot; ' . htmlspecialchars($moduleLabel ?: $title) . ' Report &middot; Generated on ' . date('F d, Y \a\t g:i A');
+    if ($hasDateRange) {
+        echo ' &middot; Period: ' . date('M d, Y', strtotime($dateFrom)) . ' &ndash; ' . date('M d, Y', strtotime($dateTo));
+    }
+    echo '</div>';
+
+    echo '</body></html>';
+}
+
+// ── EXPORT ROUTER (CSV / XLS / XLSX / DOCX) ──
+if (isset($_GET['export'])) {
+    $target   = $_GET['export'];
+    $format   = $_GET['format'] ?? 'csv';
+    $dateFrom = $_GET['from'] ?? date('Y-m-01');
+    $dateTo   = $_GET['to']   ?? date('Y-m-d');
+
+    list($headers, $rows) = reports_export_data($conn, $target, $dateFrom, $dateTo);
+
+    $filenameBase = 'heartside_' . $target . '_' . date('Ymd_His');
+    $meta         = REPORT_MODULE_META[$target] ?? ['label' => ucfirst($target), 'color' => '#0ea5e9'];
+    $title        = 'Heartside Veterinary Clinic — ' . $meta['label'] . ' Report';
+    $hasDateRange = in_array($target, ['appointments', 'consultations', 'billing', 'analytics']);
+
+    switch ($format) {
+        case 'xls':
+        case 'xlsx':
+            reports_export_excel($headers, $rows, $filenameBase, $format, ucfirst($target), $title, $dateFrom, $dateTo, $hasDateRange);
+            break;
+        case 'docx':
+            reports_export_docx($headers, $rows, $filenameBase, $title, $meta['color'], $meta['label'], $dateFrom, $dateTo, $hasDateRange);
+            break;
+        case 'csv':
+        default:
+            reports_export_csv($headers, $rows, $filenameBase);
+            break;
+    }
     exit;
 }
 
@@ -135,6 +359,41 @@ if (isset($_GET['get_count'])) {
     header('Content-Type: application/json');
     echo json_encode(['count' => intval($count)]);
     exit;
+}
+
+// ── EXPORT DROPDOWN RENDERER (CSV / XLS / XLSX / DOCX / PDF) ──
+function render_export_dropdown($id, $target, $from = null, $to = null, $small = false, $extraQs = '') {
+    $qs = ($from !== null && $to !== null) ? '&from=' . $from . '&to=' . $to : '';
+    $qs .= $extraQs;
+    $menuId = 'exportMenu' . ucfirst($id);
+    $btnExtra = $small ? ' style="font-size:12px;padding:6px 10px;"' : '';
+    ob_start();
+    ?>
+    <div class="export-dropdown-wrap">
+        <button class="btn-export" onclick="toggleExportMenu('<?= $menuId ?>',this)"<?= $btnExtra ?>>
+            <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+        </button>
+        <div class="export-menu" id="<?= $menuId ?>">
+            <div class="export-menu-label">Export As</div>
+            <a class="export-menu-item" id="csv-<?= $id ?>" href="reports.php?export=<?= $target ?>&format=csv<?= $qs ?>" onclick="document.getElementById('<?= $menuId ?>').classList.remove('show');">
+                <div class="ei-icon ei-csv"><i class="bi bi-filetype-csv"></i></div> CSV
+            </a>
+            <a class="export-menu-item" id="xls-<?= $id ?>" href="reports.php?export=<?= $target ?>&format=xls<?= $qs ?>" onclick="document.getElementById('<?= $menuId ?>').classList.remove('show');">
+                <div class="ei-icon ei-xls"><i class="bi bi-file-earmark-spreadsheet"></i></div> XLS
+            </a>
+            <a class="export-menu-item" id="xlsx-<?= $id ?>" href="reports.php?export=<?= $target ?>&format=xlsx<?= $qs ?>" onclick="document.getElementById('<?= $menuId ?>').classList.remove('show');">
+                <div class="ei-icon ei-xlsx"><i class="bi bi-file-earmark-spreadsheet-fill"></i></div> XLSX
+            </a>
+            <a class="export-menu-item" id="docx-<?= $id ?>" href="reports.php?export=<?= $target ?>&format=docx<?= $qs ?>" onclick="document.getElementById('<?= $menuId ?>').classList.remove('show');">
+                <div class="ei-icon ei-docx"><i class="bi bi-file-earmark-word"></i></div> DOCX
+            </a>
+            <a class="export-menu-item" id="pdf-<?= $id ?>" target="_blank" href="report_pdf.php?type=<?= $target ?>&back=reports<?= $qs ?>" onclick="document.getElementById('<?= $menuId ?>').classList.remove('show');">
+                <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF
+            </a>
+        </div>
+    </div>
+    <?php
+    return ob_get_clean();
 }
 
 include('header.php');
@@ -269,7 +528,15 @@ $completionRate = ($totalAppt > 0) ? round($completedAppt / $totalAppt * 100, 1)
 // ── Smart Insights ──
 $DAILY_APPT_CAPACITY = 50; // max active patients / daily appointment capacity
 $BOARDING_CAPACITY   = 10; // max boarding cages (C1–C10)
-$insights = [];
+$insights = []; // kept for legacy compat
+$moduleInsights = [
+    'appointments' => [],
+    'boarding'     => [],
+    'billing'      => [],
+    'clients'      => [],
+    'pets'         => [],
+    'consultations'=> [],
+];
 
 // 1. Today's appointment load (real-time clinical capacity metric)
 $todayAppts = intval($conn->query("
@@ -280,15 +547,15 @@ $todayAppts = intval($conn->query("
 ")->fetch_row()[0]);
 $apptLoadPct = ($DAILY_APPT_CAPACITY > 0) ? round($todayAppts / $DAILY_APPT_CAPACITY * 100) : 0;
 if ($apptLoadPct >= 100) {
-    $insights[] = ['type'=>'danger', 'icon'=>'bi-exclamation-octagon-fill',
+    $moduleInsights['appointments'][] = ['type'=>'danger', 'icon'=>'bi-exclamation-octagon-fill',
         'title' => 'Fully booked today — ' . $todayAppts . ' / ' . $DAILY_APPT_CAPACITY . ' appointments (' . $apptLoadPct . '%)',
         'msg'   => 'No more appointment slots available today. Redirect new booking requests to tomorrow or the next available date.'];
 } elseif ($apptLoadPct >= 75) {
-    $insights[] = ['type'=>'warning', 'icon'=>'bi-exclamation-triangle-fill',
+    $moduleInsights['appointments'][] = ['type'=>'warning', 'icon'=>'bi-exclamation-triangle-fill',
         'title' => 'Heavy schedule today — ' . $todayAppts . ' / ' . $DAILY_APPT_CAPACITY . ' appointments (' . $apptLoadPct . '%)',
         'msg'   => 'Only ' . ($DAILY_APPT_CAPACITY - $todayAppts) . ' slot(s) remaining today. Consider managing walk-in expectations.'];
 } else {
-    $insights[] = ['type'=>'success', 'icon'=>'bi-heart-pulse-fill',
+    $moduleInsights['appointments'][] = ['type'=>'success', 'icon'=>'bi-heart-pulse-fill',
         'title' => 'Schedule is manageable — ' . $todayAppts . ' appointment(s) today (' . $apptLoadPct . '% of daily capacity)',
         'msg'   => ($DAILY_APPT_CAPACITY - $todayAppts) . ' slot(s) still open today. Ready to accept walk-ins or new bookings.'];
 }
@@ -296,15 +563,15 @@ if ($apptLoadPct >= 100) {
 // 1b. Boarding cage occupancy
 $boardingPct = ($BOARDING_CAPACITY > 0) ? round($activeLodging / $BOARDING_CAPACITY * 100) : 0;
 if ($boardingPct >= 100) {
-    $insights[] = ['type'=>'danger', 'icon'=>'bi-house-fill',
+    $moduleInsights['boarding'][] = ['type'=>'danger', 'icon'=>'bi-house-fill',
         'title' => 'All cages occupied — ' . $activeLodging . ' / ' . $BOARDING_CAPACITY . ' cages in use (100%)',
         'msg'   => 'No boarding cages available. Decline new boarding requests until a pet checks out.'];
 } elseif ($boardingPct >= 60) {
-    $insights[] = ['type'=>'warning', 'icon'=>'bi-house-fill',
+    $moduleInsights['boarding'][] = ['type'=>'warning', 'icon'=>'bi-house-fill',
         'title' => 'Boarding nearly full — ' . $activeLodging . ' / ' . $BOARDING_CAPACITY . ' cages in use (' . $boardingPct . '%)',
         'msg'   => 'Only ' . ($BOARDING_CAPACITY - $activeLodging) . ' cage(s) remaining. Consider a waitlist for new boarding inquiries.'];
 } else {
-    $insights[] = ['type'=>'success', 'icon'=>'bi-house-fill',
+    $moduleInsights['boarding'][] = ['type'=>'success', 'icon'=>'bi-house-fill',
         'title' => 'Boarding capacity available — ' . $activeLodging . ' / ' . $BOARDING_CAPACITY . ' cages in use (' . $boardingPct . '%)',
         'msg'   => ($BOARDING_CAPACITY - $activeLodging) . ' cage(s) free. Ready to accept new boarding pets.'];
 }
@@ -318,15 +585,15 @@ foreach ($apptStats as $as) {
 $badApptPct = ($totalAppt > 0) ? round(($noShowCnt + $cancelledCnt) / $totalAppt * 100, 1) : 0;
 if ($totalAppt > 0) {
     if ($badApptPct >= 20) {
-        $insights[] = ['type'=>'danger', 'icon'=>'bi-calendar-x-fill',
+        $moduleInsights['appointments'][] = ['type'=>'danger', 'icon'=>'bi-calendar-x-fill',
             'title' => $badApptPct . '% no-show / cancellation rate — ' . ($noShowCnt + $cancelledCnt) . ' of ' . $totalAppt . ' appointments lost',
             'msg'   => 'Call or message clients 24 hrs before their appointment. Export the Appointments CSV and follow up on recurring no-shows.'];
     } elseif ($badApptPct >= 10) {
-        $insights[] = ['type'=>'warning', 'icon'=>'bi-calendar-x-fill',
+        $moduleInsights['appointments'][] = ['type'=>'warning', 'icon'=>'bi-calendar-x-fill',
             'title' => $badApptPct . '% no-show / cancellation rate (' . ($noShowCnt + $cancelledCnt) . ' appointments)',
             'msg'   => 'Slightly above ideal. Send a reminder to all upcoming Scheduled appointments this week.'];
     } else {
-        $insights[] = ['type'=>'success', 'icon'=>'bi-calendar-check-fill',
+        $moduleInsights['appointments'][] = ['type'=>'success', 'icon'=>'bi-calendar-check-fill',
             'title' => 'Good attendance — ' . $badApptPct . '% no-show / cancellation rate this period',
             'msg'   => $completionRate . '% of appointments completed. Client reliability is strong.'];
     }
@@ -335,28 +602,38 @@ if ($totalAppt > 0) {
 // 3. Collection rate — always fires if billing exists
 if ($totalBills > 0) {
     if ($collectionRate < 60) {
-        $insights[] = ['type'=>'danger', 'icon'=>'bi-cash-stack',
+        $moduleInsights['billing'][] = ['type'=>'danger', 'icon'=>'bi-cash-stack',
             'title' => 'Low collection rate — only ' . $collectionRate . '% of billed amount collected',
             'msg'   => 'Export the Billing CSV filtered to Pending/Partial. Follow up with clients who have balances above ₱500.'];
     } elseif ($collectionRate < 80) {
-        $insights[] = ['type'=>'warning', 'icon'=>'bi-cash-stack',
+        $moduleInsights['billing'][] = ['type'=>'warning', 'icon'=>'bi-cash-stack',
             'title' => 'Collection rate at ' . $collectionRate . '% — ' . ($totalBills - $paidBills) . ' unpaid bill(s) · ₱' . number_format($totalPending, 0) . ' outstanding',
             'msg'   => 'Review the billing log below and collect outstanding balances before the period closes.'];
     } else {
-        $insights[] = ['type'=>'success', 'icon'=>'bi-cash-coin',
+        $moduleInsights['billing'][] = ['type'=>'success', 'icon'=>'bi-cash-coin',
             'title' => 'Strong collection rate — ' . $collectionRate . '% collected · ₱' . number_format($totalRevenue, 0) . ' this period',
             'msg'   => $paidBills . ' of ' . $totalBills . ' bills fully paid. Billing is well-managed.'];
     }
 }
 
-// 4. Species skew — fires with 2+ pets
+// 4. Species skew — always fires if pets exist
 $topSpeciesCnt  = !empty($species) ? intval($species[0]['cnt']) : 0;
 $topSpeciesName = !empty($species) ? $species[0]['Species'] : '';
 $topSpeciesPct  = ($totalPets > 0 && $topSpeciesCnt > 0) ? round($topSpeciesCnt / $totalPets * 100) : 0;
-if ($topSpeciesPct >= 60 && $totalPets >= 2) {
-    $insights[] = ['type'=>'info', 'icon'=>'bi-pie-chart-fill',
+if ($totalPets === 0) {
+    $moduleInsights['pets'][] = ['type'=>'info', 'icon'=>'bi-heart-pulse-fill',
+        'title' => 'No active patients registered yet',
+        'msg'   => 'Start adding patients to begin tracking species distribution, trends, and patient demographics.'];
+} elseif ($topSpeciesPct >= 60 && $totalPets >= 2) {
+    $moduleInsights['pets'][] = ['type'=>'warning', 'icon'=>'bi-pie-chart-fill',
         'title' => $topSpeciesName . 's make up ' . $topSpeciesPct . '% of all registered patients',
         'msg'   => 'Patient base is concentrated in one species. Consider targeted promotions for cats, exotic pets, or other animals to diversify and reduce revenue concentration.'];
+} else {
+    // Build a species summary string
+    $speciesSummary = implode(', ', array_map(fn($s) => $s['Species'] . ' (' . $s['cnt'] . ')', array_slice($species, 0, 4)));
+    $moduleInsights['pets'][] = ['type'=>'success', 'icon'=>'bi-heart-pulse-fill',
+        'title' => 'Healthy patient mix — ' . $totalPets . ' active patient' . ($totalPets > 1 ? 's' : '') . ' across ' . count($species) . ' species',
+        'msg'   => 'Species breakdown: ' . $speciesSummary . '. A diverse patient base reduces dependency on any single species demographic.'];
 }
 
 // 5. Service concentration — fires with 2+ bookings
@@ -364,7 +641,7 @@ $topSvcCnt   = !empty($topSvcs) ? intval($topSvcs[0]['cnt']) : 0;
 $topSvcTotal = array_sum(array_column($topSvcs, 'cnt'));
 $topSvcPct   = ($topSvcTotal > 0 && $topSvcCnt > 0) ? round($topSvcCnt / $topSvcTotal * 100) : 0;
 if ($topSvcPct >= 50 && $topSvcTotal >= 2) {
-    $insights[] = ['type'=>'info', 'icon'=>'bi-grid-fill',
+    $moduleInsights['appointments'][] = ['type'=>'info', 'icon'=>'bi-grid-fill',
         'title' => '"' . htmlspecialchars($topSvcs[0]['ServiceName']) . '" is ' . $topSvcPct . '% of all service bookings this period',
         'msg'   => 'Revenue is concentrated in one service. Bundle it with lower-booked services at a slight discount to balance demand.'];
 }
@@ -372,16 +649,16 @@ if ($topSvcPct >= 50 && $topSvcTotal >= 2) {
 // 6. New client growth vs last month
 $prevMonthClients = intval($conn->query("SELECT COUNT(*) FROM clients WHERE DATE_FORMAT(CreatedAt,'%Y-%m')='".date('Y-m', strtotime('-1 month'))."' AND IsActive=1")->fetch_row()[0]);
 if ($newClients === 0 && $prevMonthClients > 0) {
-    $insights[] = ['type'=>'warning', 'icon'=>'bi-person-x-fill',
+    $moduleInsights['clients'][] = ['type'=>'warning', 'icon'=>'bi-person-x-fill',
         'title' => 'No new clients registered in this period',
         'msg'   => 'Last month had ' . $prevMonthClients . ' new clients. Consider running a referral promotion or check if the registration workflow is working.'];
 } elseif ($prevMonthClients > 0 && $newClients >= $prevMonthClients * 1.2) {
     $growthPct = round(($newClients - $prevMonthClients) / $prevMonthClients * 100);
-    $insights[] = ['type'=>'success', 'icon'=>'bi-graph-up-arrow',
+    $moduleInsights['clients'][] = ['type'=>'success', 'icon'=>'bi-graph-up-arrow',
         'title' => 'New client intake up ' . $growthPct . '% vs last month (' . $newClients . ' vs ' . $prevMonthClients . ')',
         'msg'   => 'Strong growth trend. Ask new clients how they found you and check if appointment slots can absorb the increase.'];
 } elseif ($newClients > 0) {
-    $insights[] = ['type'=>'info', 'icon'=>'bi-person-plus-fill',
+    $moduleInsights['clients'][] = ['type'=>'info', 'icon'=>'bi-person-plus-fill',
         'title' => $newClients . ' new client(s) registered this period',
         'msg'   => 'Steady intake. ' . ($prevMonthClients > 0 ? 'Last month had ' . $prevMonthClients . ' new clients.' : 'Keep tracking month-over-month to spot trends.')];
 }
@@ -393,32 +670,31 @@ if (!empty($topDiagnoses)) {
     $diagShare    = ($totalConsults > 0) ? round($topDiagCount / $totalConsults * 100) : 0;
 
     if ($diagShare >= 40) {
-        $insights[] = ['type' => 'danger', 'icon' => 'bi-activity',
+        $moduleInsights['consultations'][] = ['type' => 'danger', 'icon' => 'bi-activity',
             'title' => 'Outbreak alert — "' . ucwords($topDiagName) . '" is the most frequent diagnosis (' . $topDiagCount . ' cases, ' . $diagShare . '% of consultations)',
             'msg'   => 'This condition is highly prevalent this period. Ensure adequate medication stock, consider posting a pet health advisory for clients, and track whether it is spreading across multiple species or households.'];
     } elseif ($diagShare >= 20) {
-        $insights[] = ['type' => 'warning', 'icon' => 'bi-activity',
+        $moduleInsights['consultations'][] = ['type' => 'warning', 'icon' => 'bi-activity',
             'title' => '"' . ucwords($topDiagName) . '" is the most common diagnosis — ' . $topDiagCount . ' cases (' . $diagShare . '% of consultations)',
             'msg'   => 'Elevated frequency for this condition. Review treatment protocols, confirm adequate inventory for related medications, and consider a wellness reminder to clients whose pets may be at risk.'];
     } else {
-        $insights[] = ['type' => 'info', 'icon' => 'bi-activity',
+        $moduleInsights['consultations'][] = ['type' => 'info', 'icon' => 'bi-activity',
             'title' => 'Top diagnosis this period: "' . ucwords($topDiagName) . '" — ' . $topDiagCount . ' case(s) (' . $diagShare . '% of consultations)',
             'msg'   => 'No alarming concentration. ' . count($topDiagnoses) . ' distinct diagnosis types recorded this period. Frequency is within normal range.'];
     }
 }
-
 // 8. Follow-up rate insight
 if ($totalConsults > 0) {
     if ($followUpRate >= 50) {
-        $insights[] = ['type' => 'warning', 'icon' => 'bi-arrow-repeat',
+        $moduleInsights['consultations'][] = ['type' => 'warning', 'icon' => 'bi-arrow-repeat',
             'title' => 'High follow-up rate — ' . $followUpRate . '% of consultations (' . $followUpCount . ' of ' . $totalConsults . ') require a follow-up visit',
             'msg'   => 'A high rate may indicate recurring or unresolved conditions. Review the most common diagnoses driving follow-ups and assess if treatment protocols need adjustment.'];
     } elseif ($followUpRate >= 20) {
-        $insights[] = ['type' => 'info', 'icon' => 'bi-arrow-repeat',
+        $moduleInsights['consultations'][] = ['type' => 'info', 'icon' => 'bi-arrow-repeat',
             'title' => $followUpRate . '% follow-up rate — ' . $followUpCount . ' follow-up(s) scheduled from ' . $totalConsults . ' consultation(s)',
             'msg'   => 'Moderate follow-up rate. Ensure all scheduled follow-up appointments have been booked and remind clients at least 2 days before their follow-up date.'];
     } elseif ($totalConsults >= 5) {
-        $insights[] = ['type' => 'success', 'icon' => 'bi-patch-check-fill',
+        $moduleInsights['consultations'][] = ['type' => 'success', 'icon' => 'bi-patch-check-fill',
             'title' => 'Low follow-up rate — ' . $followUpRate . '% (' . $followUpCount . ' of ' . $totalConsults . ' consultations)',
             'msg'   => 'Most cases are being resolved in a single visit. This suggests effective treatment. Continue monitoring for any uptick in recurring conditions.'];
     }
@@ -492,6 +768,61 @@ if ($totalConsults > 0) {
 .rpt-btn-csv  { border-color: var(--green); color: var(--green); background: transparent; }
 .rpt-btn-csv:hover  { background: var(--green); color: #fff; }
 .rpt-label-all { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+/* ── Stat-card insight bell ── */
+.stat-card { position: relative; }
+.stat-card .insight-bell {
+    position: absolute; top: 10px; right: 10px;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #fffbeb; border: 1.5px solid #fcd34d;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; opacity: 0; transition: opacity .2s, transform .15s;
+    font-size: 13px; color: #d97706; z-index: 2;
+}
+.stat-card .insight-bell.has-danger  { background:#fef2f2; border-color:#fca5a5; color:#dc2626; }
+.stat-card .insight-bell.has-warning { background:#fffbeb; border-color:#fcd34d; color:#d97706; }
+.stat-card .insight-bell.has-info    { background:#eff6ff; border-color:#93c5fd; color:#2563eb; }
+.stat-card .insight-bell.has-success { background:#f0fdf4; border-color:#86efac; color:#16a34a; }
+.stat-card:hover .insight-bell { opacity: 1; transform: scale(1.08); }
+
+/* ── Insight modal overlay ── */
+#insightModal {
+    display: none; position: fixed; inset: 0; z-index: 9999;
+    background: rgba(15,23,42,.35); backdrop-filter: blur(3px);
+    align-items: center; justify-content: center; padding: 20px;
+}
+#insightModal.open { display: flex; }
+#insightModalBox {
+    background: #fff; border-radius: 14px; width: 100%; max-width: 440px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.18); overflow: hidden;
+    animation: modalPop .2s ease;
+}
+@keyframes modalPop { from { transform: scale(.93); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+#insightModalHeader {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px 10px; border-bottom: 1px solid var(--border);
+}
+#insightModalTitle { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+#insightModalClose { background: none; border: none; cursor: pointer; font-size: 18px; color: var(--light-muted); line-height:1; padding: 0; }
+#insightModalClose:hover { color: var(--text); }
+#insightModalBody { padding: 14px 18px; max-height: 60vh; overflow-y: auto; }
+#insightModalFooter { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+.insight-export-opt {
+    display: flex; align-items: center; gap: 9px;
+    width: 100%; padding: 9px 14px; background: none; border: none;
+    border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600;
+    color: var(--text); cursor: pointer; text-align: left; font-family: inherit;
+    transition: background .12s;
+}
+.insight-export-opt:hover { background: var(--bg); }
+.insight-item {
+    display: flex; align-items: flex-start; gap: 11px;
+    border-radius: 9px; padding: 11px 13px; margin-bottom: 8px; border: 1px solid;
+}
+.insight-item:last-child { margin-bottom: 0; }
+.insight-item-title { font-size: 13px; font-weight: 700; margin-bottom: 3px; line-height: 1.35; }
+.insight-item-msg   { font-size: 12px; opacity: .85; line-height: 1.5; }
+
 </style>
 
 <script>
@@ -537,7 +868,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <button type="submit" class="btn-main btn-teal" style="padding:8px 14px;">Apply</button>
             <?php endif; ?>
         </form>
-        <a href="report_pdf.php?type=analytics&range=<?= $range ?>&from=<?= $dateFrom ?>&to=<?= $dateTo ?>" target="_blank" class="btn-main" style="background:#1D9E75;color:#fff;border:none;display:flex;align-items:center;gap:6px;"><i class="bi bi-file-earmark-pdf"></i> Download PDF</a>
+        <?= render_export_dropdown('analytics', 'analytics', $dateFrom, $dateTo, false, '&range=' . $range) ?>
     </div>
 </div>
 
@@ -569,12 +900,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </span>
             <div style="display:flex;align-items:center;gap:8px;">
                 <span class="rpt-label-all">All records</span>
-                <a href="report_pdf.php?type=clients" target="_blank" class="rpt-btn rpt-btn-pdf" id="pdf-clients">
-                    <i class="bi bi-file-earmark-pdf"></i> PDF
-                </a>
-                <a href="reports.php?export_csv=clients" class="rpt-btn rpt-btn-csv">
-                    <i class="bi bi-filetype-csv"></i> CSV
-                </a>
+                <?= render_export_dropdown('clients', 'clients') ?>
             </div>
         </div>
         <div class="card-body">
@@ -605,12 +931,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </span>
             <div style="display:flex;align-items:center;gap:8px;">
                 <span class="rpt-label-all">All records</span>
-                <a href="report_pdf.php?type=pets" target="_blank" class="rpt-btn rpt-btn-pdf" id="pdf-pets">
-                    <i class="bi bi-file-earmark-pdf"></i> PDF
-                </a>
-                <a href="reports.php?export_csv=pets" class="rpt-btn rpt-btn-csv">
-                    <i class="bi bi-filetype-csv"></i> CSV
-                </a>
+                <?= render_export_dropdown('pets', 'pets') ?>
             </div>
         </div>
         <div class="card-body">
@@ -640,12 +961,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px;">Appointment records filtered by date range</span>
             </span>
             <div style="display:flex;align-items:center;gap:8px;">
-                <a id="pdf-appointments" href="report_pdf.php?type=appointments&from=<?= $defaultFrom ?>&to=<?= $defaultTo ?>" target="_blank" class="rpt-btn rpt-btn-pdf">
-                    <i class="bi bi-file-earmark-pdf"></i> PDF
-                </a>
-                <a id="csv-appointments" href="reports.php?export_csv=appointments&from=<?= $defaultFrom ?>&to=<?= $defaultTo ?>" class="rpt-btn rpt-btn-csv">
-                    <i class="bi bi-filetype-csv"></i> CSV
-                </a>
+                <?= render_export_dropdown('appointments', 'appointments', $defaultFrom, $defaultTo) ?>
             </div>
         </div>
         <div class="card-body">
@@ -685,12 +1001,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px;">Consultation &amp; examination records</span>
             </span>
             <div style="display:flex;align-items:center;gap:8px;">
-                <a id="pdf-consultations" href="report_pdf.php?type=consultations&from=<?= $defaultFrom ?>&to=<?= $defaultTo ?>" target="_blank" class="rpt-btn rpt-btn-pdf">
-                    <i class="bi bi-file-earmark-pdf"></i> PDF
-                </a>
-                <a id="csv-consultations" href="reports.php?export_csv=consultations&from=<?= $defaultFrom ?>&to=<?= $defaultTo ?>" class="rpt-btn rpt-btn-csv">
-                    <i class="bi bi-filetype-csv"></i> CSV
-                </a>
+                <?= render_export_dropdown('consultations', 'consultations', $defaultFrom, $defaultTo) ?>
             </div>
         </div>
         <div class="card-body">
@@ -730,12 +1041,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px;">Invoice &amp; payment records filtered by billing date</span>
             </span>
             <div style="display:flex;align-items:center;gap:8px;">
-                <a id="pdf-billing" href="report_pdf.php?type=billing&from=<?= $defaultFrom ?>&to=<?= $defaultTo ?>" target="_blank" class="rpt-btn rpt-btn-pdf">
-                    <i class="bi bi-file-earmark-pdf"></i> PDF
-                </a>
-                <a id="csv-billing" href="reports.php?export_csv=billing&from=<?= $defaultFrom ?>&to=<?= $defaultTo ?>" class="rpt-btn rpt-btn-csv">
-                    <i class="bi bi-filetype-csv"></i> CSV
-                </a>
+                <?= render_export_dropdown('billing', 'billing', $defaultFrom, $defaultTo) ?>
             </div>
         </div>
         <div class="card-body">
@@ -776,12 +1082,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </span>
             <div style="display:flex;align-items:center;gap:8px;">
                 <span class="rpt-label-all">All records</span>
-                <a href="report_pdf.php?type=services" target="_blank" class="rpt-btn rpt-btn-pdf" id="pdf-services">
-                    <i class="bi bi-file-earmark-pdf"></i> PDF
-                </a>
-                <a href="reports.php?export_csv=services" class="rpt-btn rpt-btn-csv">
-                    <i class="bi bi-filetype-csv"></i> CSV
-                </a>
+                <?= render_export_dropdown('services', 'services') ?>
             </div>
         </div>
         <div class="card-body">
@@ -812,12 +1113,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </span>
             <div style="display:flex;align-items:center;gap:8px;">
                 <span class="rpt-label-all">All records</span>
-                <a href="report_pdf.php?type=lodging" target="_blank" class="rpt-btn rpt-btn-pdf" id="pdf-lodging">
-                    <i class="bi bi-file-earmark-pdf"></i> PDF
-                </a>
-                <a href="reports.php?export_csv=lodging" class="rpt-btn rpt-btn-csv">
-                    <i class="bi bi-filetype-csv"></i> CSV
-                </a>
+                <?= render_export_dropdown('lodging', 'lodging') ?>
             </div>
         </div>
         <div class="card-body">
@@ -846,51 +1142,144 @@ document.addEventListener('DOMContentLoaded', function() {
 ══════════════════════════════════════ -->
 <div id="paneAnalytics" style="display:none;">
 
-<?php if (!empty($insights)): ?>
-<p class="report-section-label"><i class="bi bi-lightbulb-fill me-1" style="color:#f59e0b;"></i> Clinic Insights & Recommendations</p>
-<div class="mb-4">
-<?php
-$insightStyles = [
-    'danger'  => ['bg'=>'#fef2f2','border'=>'#fca5a5','icon'=>'#dc2626','text'=>'#991b1b'],
-    'warning' => ['bg'=>'#fffbeb','border'=>'#fcd34d','icon'=>'#d97706','text'=>'#92400e'],
-    'info'    => ['bg'=>'#eff6ff','border'=>'#93c5fd','icon'=>'#2563eb','text'=>'#1e40af'],
-    'success' => ['bg'=>'#f0fdf4','border'=>'#86efac','icon'=>'#16a34a','text'=>'#14532d'],
-];
-foreach ($insights as $ins):
-    $s = $insightStyles[$ins['type']];
-?>
-<div style="display:flex;align-items:flex-start;gap:12px;background:<?= $s['bg'] ?>;border:1px solid <?= $s['border'] ?>;border-radius:10px;padding:12px 16px;margin-bottom:8px;">
-    <i class="bi <?= $ins['icon'] ?>" style="color:<?= $s['icon'] ?>;font-size:16px;flex-shrink:0;margin-top:2px;"></i>
-    <div>
-        <div style="font-size:13px;font-weight:700;color:<?= $s['text'] ?>;margin-bottom:2px;"><?= $ins['title'] ?></div>
-        <div style="font-size:12px;color:<?= $s['text'] ?>;opacity:.85;line-height:1.5;"><?= $ins['msg'] ?></div>
-    </div>
-</div>
-<?php endforeach; ?>
-</div>
-<?php endif; ?>
 
 <p class="report-section-label"><i class="bi bi-grid-3x3-gap me-1"></i> Key Performance Indicators · <?= date('M d', strtotime($dateFrom)) ?> – <?= date('M d, Y', strtotime($dateTo)) ?></p>
 <div class="row g-3 mb-4">
+
     <?php
-    $cards = [
-        ['icon' => 'bi-people-fill', 'bg' => '#eff6ff', 'color' => '#2563eb', 'val' => $totalClients, 'lbl' => 'Active Clients', 'trend' => "<i class='bi bi-person-plus'></i> +{$newClients} new", 'tClass' => 'up'],
-        ['icon' => 'bi-heart-fill', 'bg' => '#fdf2f8', 'color' => '#db2777', 'val' => $totalPets, 'lbl' => 'Registered Pets', 'trend' => '<i class=\'bi bi-shield-check\'></i> Active patients', 'tClass' => 'up'],
-        ['icon' => 'bi-calendar-check-fill', 'bg' => '#eff6ff', 'color' => '#2563eb', 'val' => $totalAppt, 'lbl' => 'Appointments', 'trend' => "<i class='bi bi-check-circle'></i> {$completionRate}% completed", 'tClass' => 'up'],
-        ['icon' => 'bi-graph-up-arrow', 'bg' => '#f0fdf4', 'color' => '#16a34a', 'val' => '₱'.number_format($totalRevenue,0), 'lbl' => 'Revenue Collected', 'trend' => "<i class='bi bi-arrow-up-short'></i>{$collectionRate}% collection rate", 'tClass' => 'up'],
-        ['icon' => 'bi-receipt-cutoff', 'bg' => '#fffbeb', 'color' => '#d97706', 'val' => '₱'.number_format($totalPending,0), 'lbl' => 'Outstanding', 'trend' => "<i class='bi bi-exclamation-circle'></i> ".($totalBills - $paidBills)." unpaid bills", 'tClass' => 'warn'],
-        ['icon' => 'bi-cash-coin', 'bg' => '#f5f3ff', 'color' => '#7c3aed', 'val' => '₱'.number_format($avgRevPerAppt,0), 'lbl' => 'Avg. Per Completed Visit', 'trend' => "<i class='bi bi-clipboard-check'></i> {$completedAppt} visits", 'tClass' => 'up']
-    ];
-    foreach ($cards as $c): ?>
+    // ── Appointment status counts for card
+    $apptStatusMap = [];
+    foreach ($apptStats as $as) $apptStatusMap[$as['Status']] = intval($as['cnt']);
+    $apptCompleted  = $apptStatusMap['Completed'] ?? 0;
+    $apptScheduled  = $apptStatusMap['Scheduled'] ?? 0;
+    $apptCancelled  = $apptStatusMap['Cancelled'] ?? 0;
+    $apptNoShow     = $apptStatusMap['No-Show'] ?? ($apptStatusMap['No-show'] ?? 0);
+
+    // ── Billing status counts for card
+    $billStatusMap = [];
+    foreach ($payStatus as $ps) $billStatusMap[$ps['PaymentStatus']] = intval($ps['cnt']);
+    $billPaid    = $billStatusMap['Paid'] ?? 0;
+    $billPending = $billStatusMap['Pending'] ?? 0;
+    $billPartial = $billStatusMap['Partial'] ?? 0;
+
+    // ── Top diagnosis
+    $topDiagLabel = !empty($topDiagnoses) ? ucwords(array_key_first($topDiagnoses)) : '—';
+    $topDiagCnt   = !empty($topDiagnoses) ? reset($topDiagnoses) : 0;
+    $diagShare    = ($totalConsults > 0 && $topDiagCnt > 0) ? round($topDiagCnt / $totalConsults * 100) : 0;
+
+    // ── Boarding
+    $boardingFree = $BOARDING_CAPACITY - $activeLodging;
+    $bPctCard     = ($BOARDING_CAPACITY > 0) ? round($activeLodging / $BOARDING_CAPACITY * 100) : 0;
+    $bColorCard   = $bPctCard >= 100 ? '#ef4444' : ($bPctCard >= 60 ? '#f59e0b' : '#7c3aed');
+    ?>
+
+    <!-- 1. CLIENTS -->
     <div class="col-6 col-md-4 col-xl-2">
         <div class="stat-card">
-            <div class="stat-icon" style="background:<?= $c['bg'] ?>;color:<?= $c['color'] ?>;"><i class="<?= $c['icon'] ?>"></i></div>
-            <div class="stat-value" style="<?= strlen($c['val']) > 6 ? 'font-size:18px;' : '' ?>"><?= $c['val'] ?></div>
-            <div class="stat-label"><?= $c['lbl'] ?></div>
-            <div class="stat-trend <?= $c['tClass'] ?>"><?= $c['trend'] ?></div>
+            <?php if (!empty($moduleInsights['clients'])): $bt = $moduleInsights['clients'][0]['type']; ?>
+            <button class="insight-bell has-<?= $bt ?>" onclick="openInsightModal('clients')" title="View Insight"><i class="bi bi-bell-fill"></i></button>
+            <?php endif; ?>
+            <div class="stat-icon" style="background:#eff6ff;color:#2563eb;"><i class="bi bi-people-fill"></i></div>
+            <div class="stat-value"><?= $totalClients ?></div>
+            <div class="stat-label">Clients</div>
+            <div class="stat-trend up"><i class="bi bi-person-check"></i> Active clients</div>
+            <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+                <span style="font-size:10px;background:#eff6ff;color:#2563eb;border-radius:5px;padding:2px 7px;font-weight:600;"><i class="bi bi-person-plus" style="margin-right:3px;"></i>+<?= $newClients ?> new</span>
+            </div>
         </div>
     </div>
-    <?php endforeach; ?>
+
+    <!-- 2. PETS -->
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="stat-card">
+            <?php if (!empty($moduleInsights['pets'])): $bt = $moduleInsights['pets'][0]['type']; ?>
+            <button class="insight-bell has-<?= $bt ?>" onclick="openInsightModal('pets')" title="View Insight"><i class="bi bi-bell-fill"></i></button>
+            <?php endif; ?>
+            <div class="stat-icon" style="background:#fdf2f8;color:#db2777;"><i class="bi bi-heart-fill"></i></div>
+            <div class="stat-value"><?= $totalPets ?></div>
+            <div class="stat-label">Pets</div>
+            <div class="stat-trend up"><i class="bi bi-shield-check"></i> Active patients</div>
+            <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+                <?php foreach (array_slice($species, 0, 2) as $sp): ?>
+                <span style="font-size:10px;background:#fdf2f8;color:#db2777;border-radius:5px;padding:2px 7px;font-weight:600;"><?= htmlspecialchars($sp['Species']) ?> <?= $sp['cnt'] ?></span>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. APPOINTMENTS -->
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="stat-card">
+            <?php if (!empty($moduleInsights['appointments'])): $bt = $moduleInsights['appointments'][0]['type']; foreach($moduleInsights['appointments'] as $mi){ if($mi['type']==='danger'){$bt='danger';break;} if($mi['type']==='warning'){$bt='warning';} } ?>
+            <button class="insight-bell has-<?= $bt ?>" onclick="openInsightModal('appointments')" title="View Insight"><i class="bi bi-bell-fill"></i></button>
+            <?php endif; ?>
+            <div class="stat-icon" style="background:#eff6ff;color:#0ea5e9;"><i class="bi bi-calendar-check-fill"></i></div>
+            <div class="stat-value"><?= $totalAppt ?></div>
+            <div class="stat-label">Appointments</div>
+            <div class="stat-trend up"><i class="bi bi-check-circle"></i> <?= $completionRate ?>% completed</div>
+            <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;">
+                <?php if ($apptScheduled > 0): ?><span style="font-size:10px;background:#eff6ff;color:#0ea5e9;border-radius:5px;padding:2px 7px;font-weight:600;"><?= $apptScheduled ?> sched</span><?php endif; ?>
+                <?php if ($apptCancelled + $apptNoShow > 0): ?><span style="font-size:10px;background:#fef2f2;color:#dc2626;border-radius:5px;padding:2px 7px;font-weight:600;"><?= $apptCancelled + $apptNoShow ?> lost</span><?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. CONSULTATION — Top Diagnosis -->
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="stat-card">
+            <?php if (!empty($moduleInsights['consultations'])): $bt = $moduleInsights['consultations'][0]['type']; foreach($moduleInsights['consultations'] as $mi){ if($mi['type']==='danger'){$bt='danger';break;} if($mi['type']==='warning'){$bt='warning';} } ?>
+            <button class="insight-bell has-<?= $bt ?>" onclick="openInsightModal('consultations')" title="View Insight"><i class="bi bi-bell-fill"></i></button>
+            <?php endif; ?>
+            <div class="stat-icon" style="background:#faf5ff;color:#7c3aed;"><i class="bi bi-activity"></i></div>
+            <div class="stat-value" style="font-size:<?= strlen($topDiagLabel) > 14 ? '13px' : (strlen($topDiagLabel) > 9 ? '15px' : '22px') ?>;line-height:1.2;"><?= htmlspecialchars($topDiagLabel) ?></div>
+            <div class="stat-label">Top Diagnosis</div>
+            <?php if ($topDiagCnt > 0): ?>
+            <div class="stat-trend <?= $diagShare >= 40 ? 'warn' : 'up' ?>"><i class="bi bi-bar-chart-fill"></i> <?= $topDiagCnt ?> case<?= $topDiagCnt > 1 ? 's' : '' ?> · <?= $diagShare ?>%</div>
+            <?php else: ?>
+            <div class="stat-trend up"><i class="bi bi-clipboard2-pulse"></i> <?= $totalConsults ?> consults</div>
+            <?php endif; ?>
+            <div style="margin-top:8px;">
+                <span style="font-size:10px;background:#faf5ff;color:#7c3aed;border-radius:5px;padding:2px 7px;font-weight:600;"><?= $totalConsults ?> total consults</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. BILLING — Status -->
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="stat-card">
+            <?php if (!empty($moduleInsights['billing'])): $bt = $moduleInsights['billing'][0]['type']; ?>
+            <button class="insight-bell has-<?= $bt ?>" onclick="openInsightModal('billing')" title="View Insight"><i class="bi bi-bell-fill"></i></button>
+            <?php endif; ?>
+            <div class="stat-icon" style="background:#fffbeb;color:#d97706;"><i class="bi bi-receipt-cutoff"></i></div>
+            <div class="stat-value"><?= $totalBills ?></div>
+            <div class="stat-label">Billing</div>
+            <div class="stat-trend <?= $collectionRate >= 80 ? 'up' : 'warn' ?>"><i class="bi bi-cash-stack"></i> <?= $collectionRate ?>% collected</div>
+            <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;">
+                <?php if ($billPaid > 0): ?><span style="font-size:10px;background:#f0fdf4;color:#16a34a;border-radius:5px;padding:2px 7px;font-weight:600;"><?= $billPaid ?> paid</span><?php endif; ?>
+                <?php if ($billPending + $billPartial > 0): ?><span style="font-size:10px;background:#fffbeb;color:#d97706;border-radius:5px;padding:2px 7px;font-weight:600;"><?= $billPending + $billPartial ?> unpaid</span><?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. BOARDING — Capacity -->
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="stat-card">
+            <?php if (!empty($moduleInsights['boarding'])): $bt = $moduleInsights['boarding'][0]['type']; ?>
+            <button class="insight-bell has-<?= $bt ?>" onclick="openInsightModal('boarding')" title="View Insight"><i class="bi bi-bell-fill"></i></button>
+            <?php endif; ?>
+            <div class="stat-icon" style="background:#f0fdf4;color:#16a34a;"><i class="bi bi-house-heart-fill"></i></div>
+            <div class="stat-value" style="color:<?= $bColorCard ?>;"><?= $activeLodging ?><span style="font-size:14px;font-weight:500;color:var(--muted);">/<?= $BOARDING_CAPACITY ?></span></div>
+            <div class="stat-label">Boarding</div>
+            <div class="stat-trend <?= $bPctCard >= 100 ? 'warn' : 'up' ?>"><i class="bi bi-house-fill"></i> <?= $bPctCard ?>% occupied</div>
+            <div style="margin-top:8px;">
+                <div style="background:#f1f5f9;border-radius:99px;height:5px;overflow:hidden;">
+                    <div style="width:<?= min(100,$bPctCard) ?>%;height:100%;border-radius:99px;background:<?= $bColorCard ?>;transition:width .4s;"></div>
+                </div>
+                <div style="font-size:10px;color:var(--muted);margin-top:4px;"><?= $boardingFree ?> cage<?= $boardingFree != 1 ? 's' : '' ?> free</div>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <p class="report-section-label"><i class="bi bi-bar-chart-line me-1"></i> Revenue Trends</p>
@@ -1442,6 +1831,33 @@ foreach ($insights as $ins):
 
 </div><!-- /paneAnalytics -->
 
+<!-- ── Insight Modal ── -->
+<div id="insightModal" onclick="if(event.target===this)closeInsightModal()">
+    <div id="insightModalBox">
+        <div id="insightModalHeader">
+            <span id="insightModalTitle"><i class="bi bi-bell-fill" style="color:#f59e0b;"></i> Insight &amp; Recommendation</span>
+            <button id="insightModalClose" onclick="closeInsightModal()">&times;</button>
+        </div>
+        <div id="insightModalBody"></div>
+        <div id="insightModalFooter">
+            <div style="position:relative;display:inline-block;" id="insightExportWrap">
+                <button class="rpt-btn rpt-btn-csv" onclick="toggleInsightExportMenu(event)" style="font-size:12px;gap:6px;">
+                    <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down" style="font-size:10px;"></i>
+                </button>
+                <div id="insightExportMenu" style="display:none;position:absolute;bottom:calc(100% + 6px);left:0;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:160px;overflow:hidden;z-index:10;">
+                    <div style="padding:8px 12px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--light-muted);">Export As</div>
+                    <button class="insight-export-opt" onclick="exportInsight('csv')"><img src="https://img.icons8.com/color/20/csv.png" style="width:18px;height:18px;"> CSV</button>
+                    <button class="insight-export-opt" onclick="exportInsight('xls')"><img src="https://img.icons8.com/color/20/xls.png" style="width:18px;height:18px;"> XLS</button>
+                    <button class="insight-export-opt" onclick="exportInsight('xlsx')"><img src="https://img.icons8.com/color/20/xlsx.png" style="width:18px;height:18px;"> XLSX</button>
+                    <button class="insight-export-opt" onclick="exportInsight('docx')"><img src="https://img.icons8.com/color/20/docx.png" style="width:18px;height:18px;"> DOCX</button>
+                    <button class="insight-export-opt" onclick="exportInsight('pdf')" style="border-bottom:none;"><img src="https://img.icons8.com/color/20/pdf.png" style="width:18px;height:18px;"> PDF</button>
+                </div>
+            </div>
+            <button class="rpt-apply-btn" onclick="closeInsightModal()">Close</button>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
 <script>
 const teal = '#0ea5e9', green = '#10b981', amber = '#f59e0b', red = '#ef4444', purple = '#8b5cf6', indigo = '#6366f1', gridColor = '#f1f5f9', tickColor = '#94a3b8', tickFont = { size: 11 };
@@ -1514,13 +1930,123 @@ if (followUpEl) {
     });
 }
 
+// ── Insight Modal Logic ──
+const insightStyles = {
+    danger:  { bg:'#fef2f2', border:'#fca5a5', icon:'#dc2626', text:'#991b1b' },
+    warning: { bg:'#fffbeb', border:'#fcd34d', icon:'#d97706', text:'#92400e' },
+    info:    { bg:'#eff6ff', border:'#93c5fd', icon:'#2563eb', text:'#1e40af' },
+    success: { bg:'#f0fdf4', border:'#86efac', icon:'#16a34a', text:'#14532d' },
+};
+
+const moduleInsightsData = <?= json_encode($moduleInsights) ?>;
+
+let _insightReady = true;
+
+function openInsightModal(module) {
+    const items = moduleInsightsData[module] || [];
+    if (!items.length) return;
+    window._currentInsightItems = items;
+    window._currentInsightModule = module;
+    const body = document.getElementById('insightModalBody');
+    let html = '';
+    items.forEach((ins, i) => {
+        const s = insightStyles[ins.type] || insightStyles.info;
+        html += `<div class="insight-item" style="background:${s.bg};border-color:${s.border};">
+            <i class="bi ${ins.icon}" style="color:${s.icon};font-size:16px;flex-shrink:0;margin-top:2px;"></i>
+            <div>
+                <div class="insight-item-title" style="color:${s.text};">${ins.title}</div>
+                <div class="insight-item-msg" style="color:${s.text};">${ins.msg}</div>
+            </div>
+        </div>`;
+    });
+    body.innerHTML = html;
+    document.getElementById('insightModal').classList.add('open');
+}
+
+function closeInsightModal() {
+    document.getElementById('insightModal').classList.remove('open');
+}
+
+function toggleInsightExportMenu(e) {
+    e.stopPropagation();
+    const menu = document.getElementById('insightExportMenu');
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', () => {
+    const m = document.getElementById('insightExportMenu');
+    if (m) m.style.display = 'none';
+});
+
+function exportInsight(format) {
+    document.getElementById('insightExportMenu').style.display = 'none';
+    const items = window._currentInsightItems || [];
+    const module = window._currentInsightModule || 'insight';
+    const filename = 'insight_' + module + '_' + Date.now();
+
+    if (format === 'csv') {
+        let csv = '"Type","Title","Recommendation"\n';
+        items.forEach(ins => {
+            csv += `"${ins.type}","${ins.title.replace(/"/g,'""')}","${ins.msg.replace(/"/g,'""')}"\n`;
+        });
+        downloadBlob(csv, filename + '.csv', 'text/csv');
+    } else if (format === 'xls' || format === 'xlsx') {
+        // Build simple XML-based spreadsheet (opens in Excel)
+        let xml = `<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Worksheet ss:Name="Insights"><Table><Row><Cell><Data ss:Type="String">Type</Data></Cell><Cell><Data ss:Type="String">Title</Data></Cell><Cell><Data ss:Type="String">Recommendation</Data></Cell></Row>`;
+        items.forEach(ins => {
+            xml += `<Row><Cell><Data ss:Type="String">${escXml(ins.type)}</Data></Cell><Cell><Data ss:Type="String">${escXml(ins.title)}</Data></Cell><Cell><Data ss:Type="String">${escXml(ins.msg)}</Data></Cell></Row>`;
+        });
+        xml += `</Table></Worksheet></Workbook>`;
+        downloadBlob(xml, filename + '.' + format, 'application/vnd.ms-excel');
+    } else if (format === 'docx') {
+        // RTF disguised as docx — opens in Word
+        let rtf = '{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Calibri;}}{\\colortbl ;\\red0\\green0\\blue0;}\\f0\\fs24\\b Clinic Insights\\b0\\line Module: ' + module.toUpperCase() + '\\line Generated: ' + new Date().toLocaleString().replace(/[<>&]/g,'') + '\\par\\par ';
+        items.forEach((ins, i) => {
+            rtf += '\\b ' + (i+1) + '. [' + ins.type.toUpperCase() + '] ' + ins.title.replace(/[\\{}]/g,'') + '\\b0\\line ' + ins.msg.replace(/[\\{}]/g,'') + '\\par ';
+        });
+        rtf += '}';
+        downloadBlob(rtf, filename + '.doc', 'application/msword');
+    } else if (format === 'pdf') {
+        // Build a print-friendly HTML window and trigger browser print-to-PDF
+        const s = { danger:'#991b1b', warning:'#92400e', info:'#1e40af', success:'#14532d' };
+        const bg = { danger:'#fef2f2', warning:'#fffbeb', info:'#eff6ff', success:'#f0fdf4' };
+        let body = `<html><head><title>Insight Report</title><style>body{font-family:Arial,sans-serif;padding:32px;color:#1e293b;}h2{margin-bottom:4px;}p.meta{font-size:12px;color:#64748b;margin-top:0;}
+        .item{border-radius:8px;padding:14px 16px;margin-bottom:12px;}.title{font-weight:700;font-size:14px;margin-bottom:4px;}.msg{font-size:13px;line-height:1.6;}</style></head><body>
+        <h2>Clinic Insights — ${module.toUpperCase()}</h2><p class="meta">Generated: ${new Date().toLocaleString()}</p>`;
+        items.forEach(ins => {
+            body += `<div class="item" style="background:${bg[ins.type]||'#f8fafc'};border:1px solid ${ins.type==='danger'?'#fca5a5':ins.type==='warning'?'#fcd34d':ins.type==='success'?'#86efac':'#93c5fd'};">
+            <div class="title" style="color:${s[ins.type]||'#1e40af'};">[${ins.type.toUpperCase()}] ${ins.title}</div>
+            <div class="msg" style="color:${s[ins.type]||'#1e40af'};">${ins.msg}</div></div>`;
+        });
+        body += '</body></html>';
+        const w = window.open('', '_blank', 'width=700,height=600');
+        w.document.write(body);
+        w.document.close();
+        w.focus();
+        setTimeout(() => w.print(), 400);
+    }
+}
+
+function escXml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function downloadBlob(content, filename, mime) {
+    const blob = new Blob([content], { type: mime });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeInsightModal(); });
+
 // ── Date filter logic (Reports tab) ──
 function applyFilter(module) {
     const from = document.getElementById('from-' + module).value;
     const to   = document.getElementById('to-'   + module).value;
     if (!from || !to) return;
-    document.getElementById('pdf-' + module).href = `report_pdf.php?type=${module}&from=${from}&to=${to}`;
-    document.getElementById('csv-' + module).href = `reports.php?export_csv=${module}&from=${from}&to=${to}`;
+    document.getElementById('pdf-' + module).href = `report_pdf.php?type=${module}&back=reports&from=${from}&to=${to}`;
+    ['csv','xls','xlsx','docx'].forEach(fmt => {
+        document.getElementById(fmt + '-' + module).href = `reports.php?export=${module}&format=${fmt}&from=${from}&to=${to}`;
+    });
     const fmtDate = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     document.getElementById('range-' + module).textContent = fmtDate(from) + ' – ' + fmtDate(to);
     document.getElementById('count-' + module).textContent = '…';

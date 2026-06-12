@@ -76,6 +76,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// AJAX: live consultation search (for billing source dropdown)
+if (isset($_GET['search_consults'])) {
+    $q    = trim($_GET['q'] ?? '');
+    $safe = '%' . $conn->real_escape_string($q) . '%';
+    $numericID = null;
+    if (preg_match('/^CON-?0*(\d+)$/i', $q, $m)) $numericID = (int)$m[1];
+    elseif (ctype_digit($q)) $numericID = (int)$q;
+    $idCond = $numericID !== null ? "OR con.ConsultationID = $numericID" : "";
+
+    $rows = $conn->query("
+        SELECT con.ConsultationID, con.ConsultationDate, p.PetName,
+               CONCAT(c.FirstName,' ',c.LastName) AS Client,
+               COALESCE(SUM(cs.Subtotal),0) AS Total
+        FROM consultations con
+        JOIN pets p    ON con.PetID=p.PetID
+        JOIN clients c ON con.ClientID=c.ClientID
+        LEFT JOIN consultation_services cs ON cs.ConsultationID=con.ConsultationID
+        WHERE con.IsDeleted=0
+          AND NOT EXISTS (
+              SELECT 1 FROM billing b
+              WHERE b.ConsultationID = con.ConsultationID
+                AND b.IsDeleted = 0
+                AND b.PaymentStatus = 'Paid'
+          )
+          AND (p.PetName LIKE '$safe'
+               OR CONCAT(c.FirstName,' ',c.LastName) LIKE '$safe'
+               OR CONCAT('CON-',LPAD(con.ConsultationID,4,'0')) LIKE '$safe'
+               $idCond)
+        GROUP BY con.ConsultationID
+        ORDER BY con.ConsultationDate DESC LIMIT 10
+    ")->fetch_all(MYSQLI_ASSOC);
+    header('Content-Type: application/json');
+    exit(json_encode($rows));
+}
+
 // AJAX: load consultation data for billing pre-fill
 if (isset($_GET['load_consult'])) {
     $cid = intval($_GET['id']);
@@ -166,6 +201,13 @@ $consultList  = $conn->query("SELECT con.ConsultationID, con.ConsultationDate, p
 $servicesList = $conn->query("SELECT ServiceID, ServiceName, Category, Price FROM services WHERE IsActive=1 AND IsDeleted=0 ORDER BY ServiceName")->fetch_all(MYSQLI_ASSOC);
 $payMethods   = ['Cash','GCash'];
 
+// Date range filter (filters by Billing Date)
+$dateFrom = $_GET['date_from'] ?? '';
+$dateTo   = $_GET['date_to']   ?? '';
+$dateSql  = '';
+if ($dateFrom !== '') $dateSql .= " AND DATE(b.BillingDate) >= '" . $conn->real_escape_string($dateFrom) . "'";
+if ($dateTo   !== '') $dateSql .= " AND DATE(b.BillingDate) <= '" . $conn->real_escape_string($dateTo) . "'";
+
 // Pending invoice from consultation redirect
 $pendingInvoice = null;
 if (isset($_GET['from_consult'])) {
@@ -185,6 +227,38 @@ if (isset($_GET['from_consult'])) {
         <p>Invoices and revenue management</p>
     </div>
     <div class="page-header-actions">
+        <form method="get" class="date-filter-form">
+            <input type="date" name="date_from" value="<?= htmlspecialchars($dateFrom) ?>" class="date-filter-input" title="Billing date from">
+            <span class="date-filter-sep">to</span>
+            <input type="date" name="date_to" value="<?= htmlspecialchars($dateTo) ?>" class="date-filter-input" title="Billing date to">
+            <button type="submit" class="btn-date-filter" title="Filter by billing date"><i class="bi bi-funnel-fill"></i></button>
+            <?php if ($dateFrom !== '' || $dateTo !== ''): ?>
+            <a href="billing.php" class="btn-date-clear" title="Clear date filter"><i class="bi bi-x-lg"></i></a>
+            <?php endif; ?>
+        </form>
+        <div class="export-dropdown-wrap">
+            <button class="btn-export" onclick="toggleExportMenu('exportMenuBilling',this)">
+                <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+            </button>
+            <div class="export-menu" id="exportMenuBilling">
+                <div class="export-menu-label">Export As</div>
+                <div class="export-menu-item" onclick="exportCSV('.modern-table','billing_list');document.getElementById('exportMenuBilling').classList.remove('show');">
+                    <div class="ei-icon ei-csv"><i class="bi bi-filetype-csv"></i></div> CSV
+                </div>
+                <div class="export-menu-item" onclick="exportXLSX('.modern-table','billing_list',true);document.getElementById('exportMenuBilling').classList.remove('show');">
+                    <div class="ei-icon ei-xls"><i class="bi bi-file-earmark-spreadsheet"></i></div> XLS
+                </div>
+                <div class="export-menu-item" onclick="exportXLSX('.modern-table','billing_list',false);document.getElementById('exportMenuBilling').classList.remove('show');">
+                    <div class="ei-icon ei-xlsx"><i class="bi bi-file-earmark-spreadsheet-fill"></i></div> XLSX
+                </div>
+                <div class="export-menu-item" onclick="exportDOCX('.modern-table','billing_list','Billing &amp; Invoices');document.getElementById('exportMenuBilling').classList.remove('show');">
+                    <div class="ei-icon ei-docx"><i class="bi bi-file-earmark-word"></i></div> DOCX
+                </div>
+                <div class="export-menu-item" onclick="exportPDF('.modern-table');document.getElementById('exportMenuBilling').classList.remove('show');">
+                    <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF
+                </div>
+            </div>
+        </div>
         <button class="btn-main btn-teal" data-bs-toggle="modal" data-bs-target="#billModal" onclick="openAdd()">
             <i class="bi bi-plus-lg"></i> Generate Invoice
         </button>
@@ -229,7 +303,7 @@ if (isset($_GET['from_consult'])) {
             <thead><tr><th>Invoice</th><th>Date</th><th>Client</th><th>Pet</th><th>Total</th><th>Paid</th><th>Balance</th><th>Method</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
             <?php
-            $res = $conn->query("SELECT b.*,CONCAT(c.FirstName,' ',c.LastName) AS Client, p.PetName FROM billing b JOIN clients c ON b.ClientID=c.ClientID LEFT JOIN pets p ON b.PetID=p.PetID WHERE b.IsDeleted=0 ORDER BY b.CreatedAt DESC");
+            $res = $conn->query("SELECT b.*,CONCAT(c.FirstName,' ',c.LastName) AS Client, p.PetName FROM billing b JOIN clients c ON b.ClientID=c.ClientID LEFT JOIN pets p ON b.PetID=p.PetID WHERE b.IsDeleted=0 $dateSql ORDER BY b.CreatedAt DESC");
             $highlightID = isset($_GET['highlight']) ? intval($_GET['highlight']) : 0;
             if ($res->num_rows == 0) echo '<tr class="empty-row"><td colspan="10"><i class="bi bi-receipt" style="font-size:28px;display:block;margin-bottom:10px;"></i>No billing records yet.</td></tr>';
             while ($row = $res->fetch_assoc()):
@@ -284,15 +358,25 @@ if (isset($_GET['from_consult'])) {
         <div class="modal-body" style="overflow-y:auto;flex:1;">
             <!-- CONSULTATION SOURCE -->
             <div class="mb-3">
-                <label class="form-label"><i class="bi bi-clipboard2-pulse me-1" style="color:var(--teal);"></i> Source <span style="font-size:10px;font-weight:400;color:var(--muted);">— select completed consultation to load services</span></label>
-                <select id="fConsultSource" name="ConsultationID" class="form-select" onchange="onConsultChange(this)">
-                    <option value="">— manual entry —</option>
-                    <?php foreach ($consultList as $con): ?>
-                    <option value="<?= $con['ConsultationID'] ?>">
-                        CON-<?= str_pad($con['ConsultationID'], 4, '0', STR_PAD_LEFT) ?> · <?= substr($con['ConsultationDate'], 0, 10) ?> · <?= htmlspecialchars($con['PetName']) ?> / <?= htmlspecialchars($con['Client']) ?> — ₱<?= number_format($con['Total'],2) ?>
-                    </option>
-                    <?php endforeach; ?>
-                </select>
+                <label class="form-label"><i class="bi bi-clipboard2-pulse me-1" style="color:var(--teal);"></i> Source <span style="font-size:10px;font-weight:400;color:var(--muted);">— type to search consultations, or leave blank for manual entry</span></label>
+                <div style="position:relative;">
+                    <div style="position:relative;">
+                        <i class="bi bi-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none;"></i>
+                        <input type="text" id="fConsultSearchInput" class="form-control" placeholder="Search by CON-####, pet name, or client…" autocomplete="off"
+                            style="padding-left:34px;padding-right:36px;"
+                            oninput="consultSearchInput(this.value)" onfocus="consultSearchInput(this.value)" onblur="setTimeout(hideConsultDrop,200)">
+                        <button type="button" id="fConsultClearBtn" onclick="clearConsultSource()" title="Clear"
+                            style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:0;line-height:1;">
+                            <i class="bi bi-x-circle-fill"></i>
+                        </button>
+                    </div>
+                    <div id="consultSearchDrop" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:1060;max-height:240px;overflow-y:auto;">
+                        <div id="consultSearchResults"></div>
+                        <div id="consultSearchEmpty" style="display:none;padding:12px 14px;font-size:13px;color:var(--muted);text-align:center;"><i class="bi bi-clipboard2-x me-1"></i> No open consultations found</div>
+                        <div id="consultSearchLoading" style="display:none;padding:12px 14px;font-size:13px;color:var(--muted);text-align:center;"><span class="spinner-border spinner-border-sm me-2" style="color:var(--teal);"></span>Searching…</div>
+                    </div>
+                </div>
+                <input type="hidden" name="ConsultationID" id="fConsultSource">
             </div>
 
             <div id="sourceLoadedBanner" class="d-none mb-3 p-3 rounded" style="background:#f0fdf4;border:1px solid #bbf7d0;font-size:13px;">
@@ -433,13 +517,31 @@ if (isset($_GET['from_consult'])) {
 <!-- VIEW INVOICE MODAL -->
 <style>
 @media print {
+    /* ── Reset ── */
     body * { visibility: hidden; }
+    body { margin: 0; padding: 0; background: #fff; font-size: 13px; font-family: 'Inter', system-ui, sans-serif; }
+
+    /* ── Invoice / Receipt print ── */
     #invoicePrintArea, #invoicePrintArea * { visibility: visible; }
-    #invoicePrintArea { position: fixed; top: 0; left: 0; width: 100%; padding: 32px; background: #fff; }
+    #invoicePrintArea {
+        position: fixed; top: 0; left: 0; width: 100%;
+        padding: 40px; background: #fff; box-sizing: border-box;
+    }
+    .invoice-print-header, .invoice-print-footer { display: block !important; }
+
+    /* ── Client Payment History print ── */
     #cphPrintArea, #cphPrintArea * { visibility: visible; }
-    #cphPrintArea { position: fixed; top: 0; left: 0; width: 100%; padding: 32px; }
+    #cphPrintArea {
+        position: fixed; top: 0; left: 0; width: 100%;
+        padding: 40px; background: #fff; box-sizing: border-box;
+    }
     .cph-print-header, .cph-print-footer { display: block !important; }
-    .modal, .modal-dialog, .modal-content { box-shadow: none !important; border: none !important; }
+
+    /* ── Shared modal cleanup ── */
+    .modal, .modal-dialog, .modal-content {
+        box-shadow: none !important; border: none !important;
+    }
+    .badge-modern { border: 1px solid #ccc !important; }
 }
 </style>
 
@@ -458,19 +560,39 @@ if (isset($_GET['from_consult'])) {
                     </div>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;margin-left:12px;">
-                    <button type="button" onclick="printClientPayHistory()" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:#fff;color:var(--dark);cursor:pointer;">
-                        <i class="bi bi-printer"></i> Print
-                    </button>
+                    <div class="modal-export-wrap">
+                        <button type="button" class="btn-modal-export" onclick="toggleExportMenu('billHistExportMenu',this)">
+                            <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+                        </button>
+                        <div class="modal-export-menu" id="billHistExportMenu">
+                            <div class="export-menu-label">Export As</div>
+                            <div class="export-menu-item" onclick="exportCSV('#cphPrintArea table','client_payment_history');document.getElementById('billHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-csv"><i class="bi bi-filetype-csv"></i></div> CSV
+                            </div>
+                            <div class="export-menu-item" onclick="exportXLSX('#cphPrintArea table','client_payment_history',true);document.getElementById('billHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-xls"><i class="bi bi-file-earmark-spreadsheet"></i></div> XLS
+                            </div>
+                            <div class="export-menu-item" onclick="exportXLSX('#cphPrintArea table','client_payment_history',false);document.getElementById('billHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-xlsx"><i class="bi bi-file-earmark-spreadsheet-fill"></i></div> XLSX
+                            </div>
+                            <div class="export-menu-item" onclick="exportDOCX('#cphPrintArea table','client_payment_history','Client Payment History');document.getElementById('billHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-docx"><i class="bi bi-file-earmark-word"></i></div> DOCX
+                            </div>
+                            <div class="export-menu-item" onclick="window.print();document.getElementById('billHistExportMenu').classList.remove('show');">
+                                <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF / Print
+                            </div>
+                        </div>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
             </div>
             <div class="modal-body p-0" id="cphPrintArea">
                 <!-- Print-only header -->
-                <div class="cph-print-header" style="display:none;padding:18px 24px 14px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:16px;">
-                    <img src="logo1.png" alt="Heartside Vet" style="width:48px;height:48px;object-fit:contain;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto;">
-                    <div style="font-size:18px;font-weight:800;color:#1e3a5f;letter-spacing:.3px;">Heartside Vet Clinic</div>
-                    <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-top:2px;">Client Payment History</div>
-                    <div style="font-size:13px;color:#334155;margin-top:6px;">Client: <strong id="cphPrintClientName"></strong></div>
+                <div class="cph-print-header" style="display:none;padding:22px 28px 16px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:16px;">
+                    <img src="logo1.png" alt="Heartside Vet" style="width:56px;height:56px;object-fit:contain;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto;">
+                    <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.4px;line-height:1.2;">Heartside Vet Clinic</div>
+                    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;font-weight:600;">Client Payment History</div>
+                    <div style="font-size:13px;color:#334155;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;">Client: <strong id="cphPrintClientName" style="color:#1e3a5f;"></strong></div>
                 </div>
 
                 <div id="cphLoading" class="text-center p-5 text-muted">
@@ -499,8 +621,9 @@ if (isset($_GET['from_consult'])) {
                 </div>
 
                 <!-- Print-only footer -->
-                <div class="cph-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin-top:20px;padding:10px 18px;text-align:center;">
-                    <div style="font-size:10px;color:#94a3b8;">Printed from Heartside Vet Clinic Management Portal &nbsp;·&nbsp; <span id="cphPrintDate"></span></div>
+                <div class="cph-print-footer" style="display:none;border-top:2px dashed #e2e8f0;margin-top:20px;padding:12px 18px 4px;text-align:center;">
+                    <div style="font-size:10px;color:#94a3b8;letter-spacing:.3px;">Heartside Vet Clinic Management System &nbsp;·&nbsp; <span id="cphPrintDate"></span></div>
+                    <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">This document is computer-generated and valid without a signature.</div>
                 </div>
             </div>
             <div class="modal-footer" style="background:#f8fafc;border-top:1px solid var(--border);">
@@ -516,13 +639,28 @@ if (isset($_GET['from_consult'])) {
         <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#fff;border-bottom:1px solid var(--border);">
             <span style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Invoice Preview</span>
             <div style="display:flex;gap:8px;align-items:center;">
-                <button type="button" onclick="window.print()" style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:#f8fafc;color:var(--dark);cursor:pointer;">
-                    <i class="bi bi-printer"></i> Print
-                </button>
+                <div class="modal-export-wrap">
+                    <button type="button" class="btn-modal-export" onclick="toggleExportMenu('invoiceExportMenu',this)">
+                        <i class="bi bi-download"></i> Export <i class="bi bi-chevron-down chevron"></i>
+                    </button>
+                    <div class="modal-export-menu" id="invoiceExportMenu">
+                        <div class="export-menu-label">Export As</div>
+                        <div class="export-menu-item" onclick="window.print();document.getElementById('invoiceExportMenu').classList.remove('show');">
+                            <div class="ei-icon ei-pdf"><i class="bi bi-file-earmark-pdf"></i></div> PDF / Print
+                        </div>
+                    </div>
+                </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" style="font-size:11px;"></button>
             </div>
         </div>
         <div class="modal-body p-0" id="invoicePrintArea" style="background:#fff;">
+            <!-- Print-only branding header -->
+            <div class="invoice-print-header" style="display:none;padding:22px 28px 16px;border-bottom:2px dashed #e2e8f0;text-align:center;margin-bottom:0;">
+                <img src="logo1.png" alt="Heartside Vet" style="width:56px;height:56px;object-fit:contain;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto;">
+                <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.4px;line-height:1.2;">Heartside Vet Clinic</div>
+                <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1.5px;margin-top:4px;font-weight:600;">Official Receipt</div>
+            </div>
+            <!-- Screen receipt header (also visible in print, supplementary) -->
             <div style="padding:20px 20px 14px;text-align:center;border-bottom:2px dashed #e2e8f0;">
                 <img src="logo1.png" alt="Heartside Vet" style="width:52px;height:52px;object-fit:contain;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto;">
                 <div style="font-size:17px;font-weight:800;color:#1e3a5f;letter-spacing:.3px;">Heartside Vet</div>
@@ -596,8 +734,13 @@ if (isset($_GET['from_consult'])) {
                 <div id="vBillNotes" style="font-size:12px;color:var(--dark);">—</div>
             </div>
             <div style="border-top:2px dashed #e2e8f0;margin:0 20px;padding:12px 0;text-align:center;">
-                <div style="font-size:11px;font-weight:700;color:#1e3a5f;">Heartside Vet</div>
+                <div style="font-size:11px;font-weight:700;color:#1e3a5f;">Heartside Vet Clinic</div>
                 <div style="font-size:10px;color:var(--muted);margin-top:2px;">Thank you for trusting us with your pet's care.</div>
+            </div>
+            <!-- Print-only footer -->
+            <div class="invoice-print-footer" style="display:none;border-top:1px solid #f1f5f9;margin:8px 24px 0;padding:10px 0 4px;text-align:center;">
+                <div style="font-size:10px;color:#94a3b8;letter-spacing:.3px;">Heartside Vet Clinic Management System &nbsp;·&nbsp; <span id="invoicePrintDate"></span></div>
+                <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">This document is computer-generated and valid without a signature.</div>
             </div>
             <div id="vBillUpdateWrap" style="display:none;margin:0 20px 12px;padding:8px 12px;background:#fffbeb;border-radius:6px;border:1px solid #fde68a;">
                 <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#92400e;margin-bottom:4px;"><i class="bi bi-pencil-square me-1"></i>Last Updated</div>
@@ -710,28 +853,78 @@ function clearBillRows() {
     recalcBillTotal();
 }
 
-async function onConsultChange(sel) {
-    const cid = sel.value;
-    if (!cid) { clearConsultSource(); return; }
-    const res  = await fetch(`billing.php?load_consult=1&id=${cid}`);
-    const data = await res.json();
-    if (!data) { clearConsultSource(); return; }
-    document.getElementById('fClientID').value = data.ClientID;
-    filterPets(data.PetID);
-    document.getElementById('fDate').value = data.ConsultationDate ? data.ConsultationDate.substring(0, 10) : '<?= date('Y-m-d') ?>';
-    document.getElementById('sourceLoadedText').textContent = `Services loaded from Consultation #${data.ConsultationID}`;
-    document.getElementById('sourceLoadedBanner').classList.remove('d-none');
-    clearBillRows();
-    if (data.items && data.items.length) {
-        data.items.forEach(it => addBillRow(it.ServiceID, it.UnitPrice, it.Quantity, it.Description));
+    let consultSearchTimer = null;
+    function consultSearchInput(val) {
+        clearTimeout(consultSearchTimer);
+        showConsultDrop();
+        document.getElementById('consultSearchLoading').style.display = '';
+        document.getElementById('consultSearchEmpty').style.display = 'none';
+        consultSearchTimer = setTimeout(() => doConsultSearch(val), 220);
     }
-}
+    async function doConsultSearch(q) {
+        const res  = await fetch(`billing.php?search_consults=1&q=${encodeURIComponent(q)}`);
+        const rows = await res.json();
+        document.getElementById('consultSearchLoading').style.display = 'none';
+        const el = document.getElementById('consultSearchResults');
+        if (!rows.length) { el.innerHTML=''; document.getElementById('consultSearchEmpty').style.display=''; return; }
+        document.getElementById('consultSearchEmpty').style.display = 'none';
+        el.innerHTML = rows.map(c => {
+            const conID  = 'CON-' + String(c.ConsultationID).padStart(4,'0');
+            const date   = c.ConsultationDate ? c.ConsultationDate.substring(0,10) : '';
+            const total  = '₱' + parseFloat(c.Total||0).toLocaleString('en-PH',{minimumFractionDigits:2});
+            return `<div class="consult-search-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:13px;display:flex;align-items:center;gap:10px;"
+                        onmousedown="selectConsultItem(${c.ConsultationID}, '${conID}')">
+                        <div style="min-width:72px;font-weight:700;color:#16a34a;font-size:12px;">${conID}</div>
+                        <div>
+                            <div style="font-weight:600;color:var(--dark);">${c.PetName} <span style="font-weight:400;color:var(--muted);">· ${c.Client}</span></div>
+                            <div style="font-size:11px;color:var(--muted);">${date} · ${total}</div>
+                        </div>
+                    </div>`;
+        }).join('');
+    }
+    function showConsultDrop() { document.getElementById('consultSearchDrop').style.display=''; }
+    function hideConsultDrop() { document.getElementById('consultSearchDrop').style.display='none'; }
+    function selectConsultItem(id, label) {
+        document.getElementById('fConsultSearchInput').value = label;
+        document.getElementById('fConsultClearBtn').style.display = '';
+        document.getElementById('consultSearchResults').innerHTML = '';
+        hideConsultDrop();
+        onConsultChange(id);
+    }
+    // Hover highlight
+    document.addEventListener('mouseover', e => {
+        const item = e.target.closest('.consult-search-item');
+        if (item) item.style.background = '#f0fdf4';
+    });
+    document.addEventListener('mouseout', e => {
+        const item = e.target.closest('.consult-search-item');
+        if (item) item.style.background = '';
+    });
 
-function clearConsultSource() {
-    document.getElementById('fConsultSource').value = '';
-    document.getElementById('sourceLoadedBanner').classList.add('d-none');
-    clearBillRows();
-}
+    async function onConsultChange(cid) {
+        if (!cid) { clearConsultSource(); return; }
+        const res  = await fetch(`billing.php?load_consult=1&id=${cid}`);
+        const data = await res.json();
+        if (!data) { clearConsultSource(); return; }
+        document.getElementById('fConsultSource').value = cid;
+        document.getElementById('fClientID').value = data.ClientID;
+        filterPets(data.PetID);
+        document.getElementById('fDate').value = data.ConsultationDate ? data.ConsultationDate.substring(0, 10) : '<?= date('Y-m-d') ?>';
+        document.getElementById('sourceLoadedText').textContent = `Services loaded from CON-${String(cid).padStart(4,'0')}`;
+        document.getElementById('sourceLoadedBanner').classList.remove('d-none');
+        clearBillRows();
+        if (data.items && data.items.length) {
+            data.items.forEach(it => addBillRow(it.ServiceID, it.UnitPrice, it.Quantity, it.Description));
+        }
+    }
+
+    function clearConsultSource() {
+        document.getElementById('fConsultSource').value = '';
+        document.getElementById('fConsultSearchInput').value = '';
+        document.getElementById('fConsultClearBtn').style.display = 'none';
+        document.getElementById('sourceLoadedBanner').classList.add('d-none');
+        clearBillRows();
+    }
 
 function filterPets(selectPetID = null) {
     const cid = document.getElementById('fClientID').value;
@@ -814,6 +1007,12 @@ async function viewBill(r) {
     }
 }
 
+function printInvoiceCard() {
+    const el = document.getElementById('invoicePrintDate');
+    if (el) el.textContent = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+    window.print();
+}
+
 function printClientPayHistory() {
     document.getElementById('cphPrintClientName').textContent = document.getElementById('cphClientName').textContent;
     document.getElementById('cphPrintDate').textContent       = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
@@ -886,6 +1085,9 @@ function openAdd() {
     document.getElementById('billID').value    = '';
     document.getElementById('fDate').value     = '<?= date('Y-m-d') ?>';
     document.getElementById('fDiscount').value = '0';
+    document.getElementById('fConsultSource').value = '';
+    document.getElementById('fConsultSearchInput').value = '';
+    document.getElementById('fConsultClearBtn').style.display = 'none';
     document.getElementById('sourceLoadedBanner').classList.add('d-none');
     document.getElementById('billUpdateReasonField').style.display = 'none';
     document.getElementById('fBillUpdateReason').required = false;
@@ -906,22 +1108,20 @@ function openEdit(row) {
     document.getElementById('fDiscount').value  = row.Discount || '0';
     document.getElementById('fPaid').value      = row.AmountPaid;
 
-    // Prefill the consultation source dropdown and show banner when linked
-    const consultSel = document.getElementById('fConsultSource');
+    // Prefill the consultation source search input and show banner when linked
+    const consultHidden = document.getElementById('fConsultSource');
+    const consultInp    = document.getElementById('fConsultSearchInput');
+    const consultClear  = document.getElementById('fConsultClearBtn');
     if (row.ConsultationID) {
-        consultSel.value = row.ConsultationID;
-        // If the option is missing (edge case), add a ghost entry
-        if (consultSel.value != row.ConsultationID) {
-            const ghost = document.createElement('option');
-            ghost.value = row.ConsultationID;
-            ghost.textContent = 'CON-' + String(row.ConsultationID).padStart(4, '0') + ' (linked)';
-            consultSel.appendChild(ghost);
-            consultSel.value = row.ConsultationID;
-        }
-        document.getElementById('sourceLoadedText').textContent = 'Linked to Consultation #' + row.ConsultationID;
+        consultHidden.value = row.ConsultationID;
+        consultInp.value    = 'CON-' + String(row.ConsultationID).padStart(4, '0') + ' (linked)';
+        consultClear.style.display = '';
+        document.getElementById('sourceLoadedText').textContent = 'Linked to CON-' + String(row.ConsultationID).padStart(4, '0');
         document.getElementById('sourceLoadedBanner').classList.remove('d-none');
     } else {
-        consultSel.value = '';
+        consultHidden.value = '';
+        consultInp.value    = '';
+        consultClear.style.display = 'none';
         document.getElementById('sourceLoadedBanner').classList.add('d-none');
     }
 
