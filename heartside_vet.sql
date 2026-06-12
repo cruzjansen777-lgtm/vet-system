@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 08, 2026 at 11:12 PM
+-- Generation Time: Jun 12, 2026 at 10:26 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -39,31 +39,37 @@ CREATE TABLE `appointments` (
   `Status` enum('Scheduled','Completed','Cancelled','No-Show') NOT NULL DEFAULT 'Scheduled',
   `IsDeleted` tinyint(1) NOT NULL DEFAULT 0,
   `CreatedAt` datetime NOT NULL DEFAULT current_timestamp(),
-  `UpdatedAt` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `UpdatedAt` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `UpdateReason` varchar(100) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `appointments`
 --
 
-INSERT INTO `appointments` (`AppointmentID`, `PetID`, `ClientID`, `ServiceID`, `AppointmentDate`, `AppointmentTime`, `Reason`, `Notes`, `Status`, `IsDeleted`, `CreatedAt`, `UpdatedAt`) VALUES
-(1, 1, 1, 1, '2026-06-08', '09:30:00', 'Annual Wellness Exam', 'First visit this year.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(2, 3, 2, 2, '2026-06-08', '10:00:00', 'Vaccination – Anti-Rabies', 'Booster shot due.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(3, 4, 3, 4, '2026-06-08', '10:30:00', 'Vaccination – FVRCP (Cat)', 'First dose.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(4, 5, 3, 5, '2026-06-08', '11:00:00', 'Deworming', 'Routine deworming.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(5, 6, 4, 9, '2026-06-08', '13:00:00', 'Dental Cleaning (Scaling)', 'Owner noticed tartar build-up.', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-08 22:23:16'),
-(6, 7, 5, 3, '2026-06-08', '13:30:00', 'Vaccination – 5-in-1 (DHPP)', 'Annual booster.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(7, 8, 6, 11, '2026-06-08', '14:00:00', 'X-Ray – Single View', 'Limping on right hind leg.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(8, 11, 9, 1, '2026-06-08', '14:30:00', 'Annual Wellness Exam', '', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(9, 12, 10, 6, '2026-06-08', '15:00:00', 'Flea & Tick Treatment', 'Heavy infestation reported.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(10, 1, 1, 14, '2026-06-01', '09:30:00', 'Grooming – Bath & Blow Dry', 'Requested hypoallergenic shampoo.', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(11, 3, 2, 1, '2026-05-25', '10:00:00', 'Annual Wellness Exam', '', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(12, 6, 4, 12, '2026-06-05', '11:00:00', 'Blood Chemistry Panel', 'Pre-surgery labs.', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(13, 9, 7, 15, '2026-06-03', '13:30:00', 'Grooming – Full Trim', '', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(14, 4, 3, 2, '2026-06-06', '09:00:00', 'Vaccination – Anti-Rabies', '', 'Cancelled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(15, 15, 9, 13, '2026-06-10', '10:00:00', 'Urinalysis', 'Frequent urination reported.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(16, 14, 6, 7, '2026-06-11', '09:30:00', 'Spay (Female)', 'Pre-op clearance done.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(17, 2, 1, 16, '2026-06-09', '10:30:00', 'Nail Trim', '', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42');
+INSERT INTO `appointments` (`AppointmentID`, `PetID`, `ClientID`, `ServiceID`, `AppointmentDate`, `AppointmentTime`, `Reason`, `Notes`, `Status`, `IsDeleted`, `CreatedAt`, `UpdatedAt`, `UpdateReason`) VALUES
+(1, 1, 1, 1, '2026-06-08', '09:30:00', 'Annual Wellness Exam', 'First visit this year.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
+(2, 3, 2, 2, '2026-06-08', '10:00:00', 'Vaccination – Anti-Rabies', 'Booster shot due.', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-11 10:17:01', NULL),
+(3, 4, 3, 4, '2026-06-08', '10:30:00', 'Vaccination – FVRCP (Cat)', 'First dose.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
+(4, 5, 3, 5, '2026-06-08', '11:00:00', 'Deworming', 'Routine deworming.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
+(5, 6, 4, 9, '2026-06-08', '13:00:00', 'Dental Cleaning (Scaling)', 'Owner noticed tartar build-up.', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-08 22:23:16', NULL),
+(6, 7, 5, 3, '2026-06-08', '13:30:00', 'Vaccination – 5-in-1 (DHPP)', 'Annual booster.', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-11 10:42:22', NULL),
+(7, 8, 6, 11, '2026-06-08', '14:00:00', 'X-Ray – Single View', 'Limping on right hind leg.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
+(8, 11, 9, 1, '2026-06-08', '14:30:00', 'Annual Wellness Exam', '', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
+(9, 12, 10, 6, '2026-06-08', '15:00:00', 'Flea & Tick Treatment', 'Heavy infestation reported.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
+(10, 1, 1, 14, '2026-06-01', '09:30:00', 'Grooming – Bath & Blow Dry', 'Requested hypoallergenic shampoo.', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
+(11, 3, 2, 1, '2026-05-25', '10:00:00', 'Annual Wellness Exam', '', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
+(12, 6, 4, 12, '2026-06-05', '11:00:00', 'Blood Chemistry Panel', 'Pre-surgery labs.', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
+(13, 9, 7, 15, '2026-06-03', '13:30:00', 'Grooming – Full Trim', '', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
+(14, 4, 3, 2, '2026-06-06', '09:00:00', 'Vaccination – Anti-Rabies', '', 'Cancelled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
+(15, 15, 9, 13, '2026-06-10', '10:00:00', 'Urinalysis', 'Frequent urination reported.', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
+(16, 14, 6, 7, '2026-06-11', '09:30:00', 'Spay (Female)', 'Pre-op clearance done.', 'Completed', 0, '2026-06-08 18:35:42', '2026-06-11 04:33:09', NULL),
+(17, 2, 1, 16, '2026-06-09', '10:30:00', 'Nail Trim', '', 'Scheduled', 0, '2026-06-08 18:35:42', '2026-06-11 03:52:00', 'Client will continue with the appointment'),
+(18, 12, 10, 12, '2026-06-15', '11:00:00', 'Blood Chemistry Panel', '', 'Completed', 0, '2026-06-10 11:26:17', '2026-06-11 10:08:35', NULL),
+(19, 14, 6, 20, '2026-06-15', '11:30:00', 'Follow-up consultation', NULL, 'Scheduled', 1, '2026-06-11 04:34:51', '2026-06-11 10:06:58', NULL),
+(20, 12, 10, 1, '2026-06-11', '11:30:00', 'Follow-up consultation', '', 'Scheduled', 0, '2026-06-11 10:08:35', '2026-06-11 19:57:38', 'Client requested to change the appointment time'),
+(21, 9, 7, 5, '2026-06-26', '15:30:00', 'Follow-up consultation', NULL, 'Scheduled', 1, '2026-06-11 19:18:49', '2026-06-11 19:19:28', NULL),
+(22, 12, 10, NULL, '2026-06-18', '15:30:00', 'Follow-up consultation', NULL, 'Scheduled', 0, '2026-06-12 11:34:36', '2026-06-12 11:34:36', NULL);
 
 -- --------------------------------------------------------
 
@@ -104,7 +110,13 @@ INSERT INTO `billing` (`BillingID`, `ClientID`, `PetID`, `ConsultationID`, `Bill
 (8, 9, 11, NULL, '2026-06-06', 500.00, 50.00, 500.00, 'Cash', 'Paid', 'Senior pet discount applied', 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42', NULL),
 (9, 10, 12, NULL, '2026-06-04', 500.00, 0.00, 500.00, 'Cash', 'Paid', 'Flea treatment — pending collection', 0, '2026-06-08 18:35:42', '2026-06-08 23:18:19', 'Fully paid'),
 (10, 4, 6, 7, '2026-06-08', 1500.00, 0.00, 0.00, 'Cash', 'Pending', 'Auto-generated from Consultation #7', 0, '2026-06-08 22:23:16', '2026-06-08 22:23:16', NULL),
-(11, 7, 9, 4, '2026-06-03', 750.00, 0.00, 750.00, 'Cash', 'Paid', '', 0, '2026-06-08 23:14:24', '2026-06-08 23:14:24', NULL);
+(11, 7, 9, 4, '2026-06-03', 750.00, 0.00, 750.00, 'Cash', 'Paid', '', 0, '2026-06-08 23:14:24', '2026-06-08 23:14:24', NULL),
+(12, 2, 3, 2, '2026-05-25', 500.00, 0.00, 500.00, 'Cash', 'Paid', '', 0, '2026-06-10 11:30:57', '2026-06-10 11:30:57', NULL),
+(13, 6, 14, 8, '2026-06-10', 3500.00, 0.00, 0.00, 'Cash', 'Pending', 'Auto-generated from Consultation #8', 0, '2026-06-11 04:33:09', '2026-06-11 04:33:09', NULL),
+(14, 6, 14, 8, '2026-06-11', 3500.00, 0.00, 3500.00, 'Cash', 'Paid', '', 0, '2026-06-11 04:36:08', '2026-06-11 04:36:08', NULL),
+(15, 10, 12, 9, '2026-06-11', 1200.00, 0.00, 1200.00, 'Cash', 'Paid', 'Auto-generated from Consultation #9', 0, '2026-06-11 10:08:35', '2026-06-11 10:10:09', 'fully paid'),
+(16, 2, 3, 10, '2026-06-11', 350.00, 0.00, 0.00, 'Cash', 'Pending', 'Auto-generated from Consultation #10', 0, '2026-06-11 10:17:01', '2026-06-11 10:17:01', NULL),
+(17, 5, 7, 11, '2026-06-08', 450.00, 0.00, 450.00, 'Cash', 'Paid', '', 0, '2026-06-11 10:44:30', '2026-06-11 10:44:30', NULL);
 
 -- --------------------------------------------------------
 
@@ -141,7 +153,10 @@ INSERT INTO `billing_items` (`BillingItemID`, `BillingID`, `ServiceID`, `Descrip
 (11, 8, 1, 'Annual Wellness Exam', 1, 500.00, 500.00, '2026-06-08 18:35:42'),
 (12, 9, 6, 'Flea & Tick Treatment', 1, 300.00, 300.00, '2026-06-08 18:35:42'),
 (13, 11, 15, 'Grooming – Full Trim', 1, 600.00, 600.00, '2026-06-08 23:14:24'),
-(14, 11, 16, 'Nail Trim', 1, 150.00, 150.00, '2026-06-08 23:14:24');
+(14, 11, 16, 'Nail Trim', 1, 150.00, 150.00, '2026-06-08 23:14:24'),
+(15, 12, 1, 'Annual Wellness Exam', 1, 500.00, 500.00, '2026-06-10 11:30:57'),
+(16, 14, 7, 'Spay (Female)', 1, 3500.00, 3500.00, '2026-06-11 04:36:08'),
+(17, 17, 3, 'Vaccination – 5-in-1 (DHPP)', 1, 450.00, 450.00, '2026-06-11 10:44:30');
 
 -- --------------------------------------------------------
 
@@ -172,7 +187,7 @@ INSERT INTO `clients` (`ClientID`, `FirstName`, `LastName`, `Email`, `Phone`, `A
 (3, 'Ana', 'Dela Cruz', 'anadelacruz@gmail.com', 2147483647, '88 Mabini St., Pasig City', 1, 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
 (4, 'Carlo', 'Ramos', 'carlo.ramos@outlook.com', 2147483647, '20 Magsaysay Blvd., Manila', 1, 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
 (5, 'Lourdes', 'Bautista', 'lbautista@gmail.com', 2147483647, '7 Orchid St., Marikina City', 1, 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
-(6, 'Roberto', 'Aquino', 'r.aquino@promail.ph', 2147483647, '55 Bonifacio St., Mandaluyong', 1, 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
+(6, 'Roberto', 'Aquino', 'r.aquino@promail.ph', 2147483647, '55 Bonifacio St., Mandaluyong', 1, 0, '2026-04-01 18:35:42', '2026-06-11 04:06:23'),
 (7, 'Jenny', 'Torres', 'jenny.torres@gmail.com', 2147483647, 'Unit 4B Sunrise Condo, Pasay City', 1, 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
 (8, 'Mark', 'Garcia', 'markgarcia@gmail.com', 2147483647, '101 Luna St., Las Piñas City', 0, 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
 (9, 'Patricia', 'Flores', 'pat.flores@yahoo.com', 2147483647, '30 Dahlia St., Muntinlupa City', 1, 0, '2026-06-08 18:35:42', '2026-06-08 18:35:42'),
@@ -213,10 +228,14 @@ INSERT INTO `consultations` (`ConsultationID`, `PetID`, `ClientID`, `Appointment
 (1, 1, 1, 10, '2026-06-01', 'Dr. Reyes', 'Routine grooming visit.', 'Healthy, slight dandruff.', 'Medicated shampoo bath.', 'Zinc supplement tabs x30', 'Owner advised monthly grooming.', NULL, '2026-06-08 18:35:42', NULL, NULL, NULL, 0, '2026-06-08 18:35:42'),
 (2, 3, 2, 11, '2026-05-25', 'Dr. Santos', 'Annual check. No complaints.', 'Healthy adult dog.', 'Physical exam, weight check.', 'None', 'Advised weight management diet.', NULL, '2026-06-08 18:35:42', NULL, NULL, NULL, 0, '2026-06-08 18:35:42'),
 (3, 6, 4, 12, '2026-06-05', 'Dr. Reyes', 'Pre-surgery blood work.', 'Mild anemia, otherwise normal.', 'Iron supplementation for 2 weeks pre-op.', 'Ferrous sulfate 50mg SID x14', 'Surgery scheduled in 3 days.', NULL, '2026-06-08 18:35:42', NULL, NULL, NULL, 0, '2026-06-08 18:35:42'),
-(4, 9, 7, 13, '2026-06-03', 'Dr. Lim', 'Full groom.', 'Healthy coat, mild ear debris.', 'Grooming, ear flushing.', 'Ear cleaning solution PRN', 'Recommend ear cleaning every 2 weeks.', NULL, '2026-06-08 18:35:42', NULL, NULL, NULL, 0, '2026-06-08 18:35:42'),
+(4, 9, 7, 13, '2026-06-03', 'Dr. Lim', 'Full groom.', 'Healthy coat, mild ear debris.', 'Grooming, ear flushing.', 'Ear cleaning solution PRN', '', 'cancelled follow up', '2026-06-11 19:19:36', NULL, NULL, NULL, 1, '2026-06-08 18:35:42'),
 (5, 5, 3, NULL, '2026-05-29', 'Dr. Santos', 'Vomiting x2 days, lethargy.', 'Gastroenteritis.', 'IV fluids, anti-emetic injection.', 'Metronidazole 250mg BID x5 days, Cimetidine 200mg BID x5 days', 'Recheck in 5 days if no improvement.', NULL, '2026-06-08 18:35:42', NULL, NULL, NULL, 0, '2026-06-08 18:35:42'),
 (6, 8, 6, NULL, '2026-05-19', 'Dr. Reyes', 'Limping on right hind leg x3 days.', 'Mild soft-tissue injury, no fracture.', 'Rest, NSAIDs, cold compress.', 'Meloxicam 1.5mg SID x7 days', 'X-ray confirmed no bone involvement. Follow-up if persists.', NULL, '2026-06-08 18:35:42', NULL, NULL, NULL, 0, '2026-06-08 18:35:42'),
-(7, 6, 4, 5, '2026-06-08', 'Dr. Santos', 'Limping On Right Hind Leg X3 Days.', 'No Fracture.', 'a', 'a', '', 'Updated the symptoms and diagnosis', '2026-06-09 02:49:50', NULL, NULL, NULL, 0, '2026-06-08 22:23:16');
+(7, 6, 4, 5, '2026-06-08', 'Dr. Santos', 'Limping On Right Hind Leg X3 Days.', 'Fracture.', 'a', 'a', '', '.', '2026-06-11 18:12:14', NULL, NULL, NULL, 0, '2026-06-08 22:23:16'),
+(8, 14, 6, 16, '2026-06-11', 'Dr. Lim', '-', '-', '-', '-', '', 'cancelled follow up', '2026-06-11 10:07:05', NULL, NULL, NULL, 1, '2026-06-11 04:33:09'),
+(9, 12, 10, 18, '2026-06-15', 'Dr. Reyes', '-', '-', '-', '-', '', 'added time', '2026-06-12 11:34:36', '2026-06-18', '12:00:00', 1, 0, '2026-06-11 10:08:35'),
+(10, 3, 2, 2, '2026-06-08', 'Dr. Santos', '-`', '-', '-', '-', '', NULL, '2026-06-11 10:17:01', NULL, NULL, NULL, 0, '2026-06-11 10:17:01'),
+(11, 7, 5, 6, '2026-06-08', 'Dr. Santos', '-', '-', '-', '-', '', NULL, '2026-06-11 10:42:22', NULL, NULL, NULL, 0, '2026-06-11 10:42:22');
 
 -- --------------------------------------------------------
 
@@ -244,13 +263,17 @@ INSERT INTO `consultation_services` (`ConsultationServiceID`, `ConsultationID`, 
 (1, 1, 14, 'Grooming – Bath & Blow Dry', 'Grooming', 1, 350.00, 350.00, '2026-06-08 18:35:42'),
 (2, 2, 1, 'Annual Wellness Exam', 'Consultation', 1, 500.00, 500.00, '2026-06-08 18:35:42'),
 (3, 3, 12, 'Blood Chemistry Panel', 'Diagnostics', 1, 1200.00, 1200.00, '2026-06-08 18:35:42'),
-(4, 4, 15, 'Grooming – Full Trim', 'Grooming', 1, 600.00, 600.00, '2026-06-08 18:35:42'),
-(5, 4, 16, 'Nail Trim', 'Grooming', 1, 150.00, 150.00, '2026-06-08 18:35:42'),
 (6, 5, 19, 'IV Fluid Therapy', 'Treatment', 1, 800.00, 800.00, '2026-06-08 18:35:42'),
 (7, 5, 1, 'Annual Wellness Exam', 'Consultation', 1, 500.00, 500.00, '2026-06-08 18:35:42'),
 (8, 6, 11, 'X-Ray – Single View', 'Diagnostics', 1, 800.00, 800.00, '2026-06-08 18:35:42'),
 (9, 6, 1, 'Annual Wellness Exam', 'Consultation', 1, 500.00, 500.00, '2026-06-08 18:35:42'),
-(11, 7, 9, 'Dental Cleaning (Scaling)', 'Dental', 1, 1500.00, 1500.00, '2026-06-09 02:49:50');
+(14, 8, 7, 'Spay (Female)', 'Surgery', 1, 3500.00, 3500.00, '2026-06-11 10:06:58'),
+(16, 10, 2, 'Vaccination – Anti-Rabies', 'Vaccination', 1, 350.00, 350.00, '2026-06-11 10:17:01'),
+(17, 11, 3, 'Vaccination – 5-in-1 (DHPP)', 'Vaccination', 1, 450.00, 450.00, '2026-06-11 10:42:22'),
+(18, 7, 9, 'Dental Cleaning (Scaling)', 'Dental', 1, 1500.00, 1500.00, '2026-06-11 18:12:14'),
+(21, 4, 15, 'Grooming – Full Trim', 'Grooming', 1, 600.00, 600.00, '2026-06-11 19:19:28'),
+(22, 4, 16, 'Nail Trim', 'Grooming', 1, 150.00, 150.00, '2026-06-11 19:19:28'),
+(23, 9, 12, 'Blood Chemistry Panel', 'Diagnostics', 1, 1200.00, 1200.00, '2026-06-12 11:34:36');
 
 -- --------------------------------------------------------
 
@@ -283,7 +306,7 @@ INSERT INTO `lodging` (`LodgingID`, `PetID`, `ClientID`, `CheckInDate`, `CheckOu
 (2, 12, 10, '2026-06-04', NULL, 'C10', 400.00, 'Anxiety — keep away from cats.', 'Active', '2026-06-08 18:35:42', '2026-06-09 03:09:05', 0, 'change cage'),
 (3, 3, 2, '2026-06-01', '2026-06-06', 'C8', 600.00, 'Allergic to chicken-based food.', 'Checked Out', '2026-06-08 18:35:42', '2026-06-09 03:09:24', 0, 'change cage'),
 (4, 1, 1, '2026-05-29', '2026-06-05', 'C8', 400.00, 'Playful — large run preferred.', 'Checked Out', '2026-06-08 18:35:42', '2026-06-09 03:09:49', 0, 'change cage'),
-(5, 8, 6, '2026-06-08', NULL, 'C1', 450.00, '', 'Active', '2026-06-09 02:56:17', '2026-06-09 03:08:22', 0, 'Change cage');
+(5, 8, 6, '2026-06-08', '2026-06-11', 'C1', 450.00, '', 'Checked Out', '2026-06-09 02:56:17', '2026-06-11 11:34:44', 0, 'Change cage');
 
 -- --------------------------------------------------------
 
@@ -537,19 +560,19 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `appointments`
 --
 ALTER TABLE `appointments`
-  MODIFY `AppointmentID` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
+  MODIFY `AppointmentID` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=23;
 
 --
 -- AUTO_INCREMENT for table `billing`
 --
 ALTER TABLE `billing`
-  MODIFY `BillingID` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
+  MODIFY `BillingID` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
 
 --
 -- AUTO_INCREMENT for table `billing_items`
 --
 ALTER TABLE `billing_items`
-  MODIFY `BillingItemID` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
+  MODIFY `BillingItemID` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
 
 --
 -- AUTO_INCREMENT for table `clients`
@@ -561,13 +584,13 @@ ALTER TABLE `clients`
 -- AUTO_INCREMENT for table `consultations`
 --
 ALTER TABLE `consultations`
-  MODIFY `ConsultationID` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `ConsultationID` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT for table `consultation_services`
 --
 ALTER TABLE `consultation_services`
-  MODIFY `ConsultationServiceID` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
+  MODIFY `ConsultationServiceID` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=24;
 
 --
 -- AUTO_INCREMENT for table `lodging`
